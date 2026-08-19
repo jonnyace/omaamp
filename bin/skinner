@@ -1,0 +1,565 @@
+#!/usr/bin/env python3
+"""JSON bridge between the Omarchy shell plugin and the conversion engine.
+
+The shell is a single long-running Quickshell process, so the plugin does no
+work in-process beyond drawing: every command here is a short-lived subprocess
+that prints one JSON object on stdout and exits. Errors are reported as
+``{"error": ...}`` with a zero exit status, so QML has one shape to parse
+rather than a split between stdout and exit codes.
+
+    skinner search <query> [--limit N] [--offset N]
+    skinner browse [--limit N] [--offset N]
+    skinner preview <md5>            convert without installing
+    skinner install <md5>            convert, write theme, return its name
+    skinner apply <name>             switch cliamp to an installed theme
+    skinner themes                   installed themes, ours flagged
+    skinner save <name> <json>       write an edited palette
+    skinner remove <name>
+    skinner sync                     derive a theme from the current Omarchy theme
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import re
+import io
+import subprocess
+import sys
+import zipfile
+import urllib.error
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from cliamp_skinner import build, load, museum  # noqa: E402
+from cliamp_skinner.color import parse_hex, to_hex  # noqa: E402
+from cliamp_skinner.theme import SLOTS, Theme  # noqa: E402
+
+THEMES = Path.home() / ".config" / "cliamp" / "themes"
+CACHE = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "omaamp"
+SHOTS = CACHE / "screenshots"
+SKINS = CACHE / "skins"
+SPRITES = CACHE / "sprites"
+# Written next to each generated theme so "Mine" can tell our themes from
+# cliamp's built-ins and from anything the user hand-wrote.
+INDEX = CACHE / "installed.json"
+
+# The one piece of state shared between the bar plugin and the player app,
+# which are separate processes. The plugin writes it; the app watches it and
+# hot-swaps its skin, so choosing a skin never has to restart the player.
+STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "omaamp"
+CURRENT = STATE / "current.json"
+
+
+def emit(payload: dict) -> int:
+    json.dump(payload, sys.stdout)
+    sys.stdout.write("\n")
+    return 0
+
+
+def slugify(name: str) -> str:
+    stem = re.sub(r"\.(wsz|zip|wal)$", "", name, flags=re.I)
+    return re.sub(r"[^a-z0-9]+", "-", stem.lower()).strip("-") or "skin"
+
+
+def read_index() -> dict:
+    try:
+        return json.loads(INDEX.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def write_index(data: dict) -> None:
+    INDEX.parent.mkdir(parents=True, exist_ok=True)
+    INDEX.write_text(json.dumps(data, indent=1))
+
+
+def cache_screenshot(ref: museum.SkinRef) -> str:
+    """Download a skin's screenshot once and return its local path.
+
+    These are the museum's own 275x348 renders of the Winamp window, which is
+    what makes the picker recognizable -- a row of hex swatches would not be.
+    """
+    if not ref.screenshot_url:
+        return ""
+    SHOTS.mkdir(parents=True, exist_ok=True)
+    path = SHOTS / f"{ref.md5}.png"
+    if not path.exists():
+        try:
+            path.write_bytes(museum._request(ref.screenshot_url))
+        except (urllib.error.URLError, OSError):
+            return ""
+    return str(path)
+
+
+def fetch_skin(md5: str) -> bytes:
+    SKINS.mkdir(parents=True, exist_ok=True)
+    path = SKINS / f"{md5}.wsz"
+    if path.exists():
+        return path.read_bytes()
+    data = museum.query(
+        "query($m:String!){fetch_skin_by_md5(md5:$m){"
+        "... on ClassicSkin{filename download_url}}}",
+        {"m": md5},
+    )["fetch_skin_by_md5"]
+    if not data:
+        raise LookupError(f"no skin with md5 {md5}")
+    blob = museum.download(data["download_url"])
+    path.write_bytes(blob)
+    (SKINS / f"{md5}.name").write_text(data.get("filename") or md5)
+    return blob
+
+
+def skin_name(md5: str) -> str:
+    try:
+        return (SKINS / f"{md5}.name").read_text().strip()
+    except OSError:
+        return md5
+
+
+def theme_payload(built: Theme, **extra) -> dict:
+    # Named `built`, not `theme`: callers pass a `theme=<slug>` field through
+    # **extra, which would collide with the positional name.
+    return {
+        "colors": {slot: to_hex(getattr(built, slot)) for slot in SLOTS},
+        "invented": sorted(set(built.invented)),
+        "adjusted": sorted(set(built.adjusted)),
+        "notes": built.notes,
+        **extra,
+    }
+
+
+def listing(refs: list[museum.SkinRef]) -> dict:
+    return {
+        "skins": [
+            {
+                "md5": r.md5,
+                "name": re.sub(r"\.(wsz|zip)$", "", r.filename, flags=re.I) or r.md5,
+                "screenshot": cache_screenshot(r),
+                "url": r.museum_url,
+            }
+            for r in refs
+        ]
+    }
+
+
+# --------------------------------------------------------------------------
+# Commands
+# --------------------------------------------------------------------------
+
+
+def cmd_search(args) -> int:
+    return emit(listing(museum.search(args.query, first=args.limit, offset=args.offset)))
+
+
+FEATURED = CACHE / "featured.json"
+
+
+def cmd_fetch_featured(args) -> int:
+    """Cache the museum's top-N skins locally: list, screenshots, archives.
+
+    sort:MUSEUM is the museum's own curated ranking, so "top" here means the
+    order a visitor sees on skins.webamp.org -- classics first, not upload
+    order. Everything lands in the cache, which makes the panel's default
+    Browse view instant and fully offline afterwards.
+    """
+    import concurrent.futures as futures
+
+    want = args.count
+    refs, offset = [], 0
+    while len(refs) < want:
+        page = museum.browse(first=min(80, want - len(refs) + 20), offset=offset)
+        if not page:
+            break
+        offset += len(page)
+        seen = {r.md5 for r in refs}
+        refs.extend(r for r in page if r.md5 not in seen)
+    refs = refs[:want]
+
+    def prime(ref):
+        try:
+            cache_screenshot(ref)
+            fetch_skin(ref.md5)
+            return None
+        except Exception as exc:
+            return f"{ref.md5[:8]} {ref.filename}: {exc}"
+
+    with futures.ThreadPoolExecutor(8) as pool:
+        errors = [e for e in pool.map(prime, refs) if e]
+
+    FEATURED.write_text(json.dumps([
+        {
+            "md5": r.md5,
+            "name": re.sub(r"\.(wsz|zip)$", "", r.filename, flags=re.I) or r.md5,
+            "screenshot": str(SHOTS / f"{r.md5}.png"),
+            "url": r.museum_url,
+        }
+        for r in refs
+    ], indent=1))
+    return emit({"featured": len(refs), "errors": errors[:10]})
+
+
+def cmd_featured(args) -> int:
+    """Serve the cached top list; fall back to a live browse when absent."""
+    try:
+        rows = json.loads(FEATURED.read_text())
+        rows = [r for r in rows if Path(r.get("screenshot", "")).exists()]
+        if rows:
+            return emit({"skins": rows[args.offset:args.offset + args.limit]})
+    except (OSError, ValueError):
+        pass
+    return cmd_browse(args)
+
+
+def cmd_browse(args) -> int:
+    return emit(listing(museum.browse(first=args.limit, offset=args.offset)))
+
+
+# Sheets OmaAmp draws the main window from. numbers/nums_ex are alternatives:
+# 15.7% of the corpus ships only the extended variant.
+SHEETS = (
+    "main.bmp", "titlebar.bmp", "cbuttons.bmp", "text.bmp", "posbar.bmp",
+    "volume.bmp", "balance.bmp", "shufrep.bmp", "monoster.bmp", "playpaus.bmp",
+    "numbers.bmp", "nums_ex.bmp",
+    # Not a sheet: the analyzer's 24-colour ramp, read by the player at runtime.
+    "viscolor.txt",
+)
+
+
+def cmd_extract(args) -> int:
+    """Unpack a skin's sprite sheets into a flat, lowercase directory.
+
+    Skins nest their contents inconsistently and case their filenames every
+    which way ("PLEDIT.TXT", "cButtons.bmp"), which QML cannot paper over the
+    way a tolerant reader can -- an Image source either resolves or it does
+    not. So the archive is normalised once here and the window is handed a
+    directory with predictable names.
+    """
+    data = fetch_skin(args.md5)
+    out = SPRITES / args.md5
+    if not args.force and (out / "main.bmp").exists():
+        return emit(_sprite_payload(args.md5, out))
+
+    out.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        members = {}
+        for entry in zf.namelist():
+            if not entry.endswith("/"):
+                members.setdefault(entry.rsplit("/", 1)[-1].lower(), entry)
+        for sheet in SHEETS:
+            if sheet in members:
+                (out / sheet).write_bytes(zf.read(members[sheet]))
+    return emit(_sprite_payload(args.md5, out))
+
+
+def _sprite_payload(md5: str, out: Path) -> dict:
+    present = sorted(p.name for p in out.glob("*.bmp"))
+    return {
+        "dir": str(out),
+        "md5": md5,
+        "name": skin_name(md5),
+        "sheets": present,
+        # The window needs to know which digit sheet it got: nums_ex leads with
+        # a minus sign, shifting every glyph one cell to the right.
+        "extendedDigits": "numbers.bmp" not in present and "nums_ex.bmp" in present,
+        "missing": [s for s in ("main.bmp", "cbuttons.bmp", "titlebar.bmp", "text.bmp") if s not in present],
+    }
+
+
+def cmd_preview(args) -> int:
+    # Fetch first: the cached display name is written as a side effect of the
+    # download, so reading it beforehand yields the md5 on a cold cache.
+    data = fetch_skin(args.md5)
+    name = skin_name(args.md5)
+    theme = build(load(data, name=name))
+    return emit(theme_payload(theme, md5=args.md5, name=name))
+
+
+def cmd_install(args) -> int:
+    data = fetch_skin(args.md5)
+    filename = skin_name(args.md5)
+    theme = build(load(data, name=filename))
+    slug = slugify(filename)
+    THEMES.mkdir(parents=True, exist_ok=True)
+    (THEMES / f"{slug}.toml").write_text(theme.to_toml())
+
+    index = read_index()
+    index[slug] = {"md5": args.md5, "source": filename}
+    write_index(index)
+    return emit(theme_payload(theme, theme=slug, md5=args.md5, name=filename))
+
+
+def cmd_use(args) -> int:
+    """Wear a skin: unpack it, theme cliamp to match, and tell the player.
+
+    One command because they are one user action. The player is a separate
+    process, so the handoff is a state file it watches rather than an IPC call
+    into an instance that may not be running yet.
+    """
+    sprites = json.loads(json.dumps(_sprite_payload(args.md5, SPRITES / args.md5)))
+    if not (SPRITES / args.md5 / "main.bmp").exists():
+        cmd_extract_quiet(args.md5)
+        sprites = _sprite_payload(args.md5, SPRITES / args.md5)
+
+    data = fetch_skin(args.md5)
+    filename = skin_name(args.md5)
+    built = build(load(data, name=filename))
+    slug = slugify(filename)
+    THEMES.mkdir(parents=True, exist_ok=True)
+    (THEMES / f"{slug}.toml").write_text(built.to_toml())
+
+    index = read_index()
+    index[slug] = {"md5": args.md5, "source": filename}
+    write_index(index)
+
+    STATE.mkdir(parents=True, exist_ok=True)
+    CURRENT.write_text(json.dumps({
+        "md5": args.md5,
+        "dir": sprites["dir"],
+        "name": re.sub(r"\.(wsz|zip)$", "", filename, flags=re.I),
+        "extendedDigits": sprites["extendedDigits"],
+        "theme": slug,
+    }, indent=1))
+
+    if not args.no_theme:
+        subprocess.run(["cliamp", "theme", slug], capture_output=True, text=True, timeout=15)
+
+    return emit(theme_payload(built, theme=slug, md5=args.md5, name=filename,
+                              dir=sprites["dir"], missing=sprites["missing"]))
+
+
+def cmd_extract_quiet(md5: str) -> None:
+    """Unpack sheets without emitting -- the caller owns the output."""
+    data = fetch_skin(md5)
+    out = SPRITES / md5
+    out.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        members = {}
+        for entry in zf.namelist():
+            if not entry.endswith("/"):
+                members.setdefault(entry.rsplit("/", 1)[-1].lower(), entry)
+        for sheet in SHEETS:
+            if sheet in members:
+                (out / sheet).write_bytes(zf.read(members[sheet]))
+
+
+def cmd_make_theme(args) -> int:
+    """Turn a skin into a full Omarchy theme under ~/.config/omarchy/themes/.
+
+    This is the deep end of "wear a skin": colors.toml plus a rendered
+    wallpaper, which Omarchy's own template engine then fans out to every
+    themed app. Apply with `omarchy theme set <slug>`.
+    """
+    from cliamp_skinner import omarchy_theme
+
+    data = fetch_skin(args.md5)
+    filename = skin_name(args.md5)
+    skin = load(data, name=filename)
+    built = build(skin)
+    slug = "omaamp-" + slugify(filename)
+
+    main_bmp = None
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        members = {}
+        for entry in zf.namelist():
+            if not entry.endswith("/"):
+                members.setdefault(entry.rsplit("/", 1)[-1].lower(), entry)
+        if "main.bmp" in members:
+            main_bmp = zf.read(members["main.bmp"])
+
+    dest = Path.home() / ".config" / "omarchy" / "themes" / slug
+    colors = omarchy_theme.build_theme_dir(dest, skin, built, main_bmp, filename)
+    return emit({
+        "theme": slug,
+        "dir": str(dest),
+        "colors": colors,
+        "apply": f"omarchy theme set {slug}",
+    })
+
+
+def cmd_current(args) -> int:
+    try:
+        return emit(json.loads(CURRENT.read_text()))
+    except (OSError, ValueError):
+        return emit({"error": "no skin selected yet"})
+
+
+def cmd_apply(args) -> int:
+    result = subprocess.run(
+        ["cliamp", "theme", args.name], capture_output=True, text=True, timeout=15
+    )
+    if result.returncode != 0:
+        return emit({"error": (result.stderr or result.stdout).strip() or "cliamp theme failed"})
+    return emit({"applied": args.name})
+
+
+def cmd_themes(args) -> int:
+    index = read_index()
+    result = subprocess.run(
+        ["cliamp", "theme", "list"], capture_output=True, text=True, timeout=15
+    )
+    names = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    out = []
+    for name in names:
+        entry = {"name": name, "converted": name in index}
+        path = THEMES / f"{name}.toml"
+        if path.exists():
+            entry["colors"] = read_theme(path)
+        if name in index:
+            entry["source"] = index[name].get("source", "")
+            entry["md5"] = index[name].get("md5", "")
+        out.append(entry)
+    return emit({"themes": out})
+
+
+def read_theme(path: Path) -> dict:
+    """Parse a cliamp theme without tomllib, so partial files still render."""
+    colors = {}
+    for line in path.read_text().splitlines():
+        m = re.match(r'\s*(\w+)\s*=\s*"(#?[0-9a-fA-F]{6})"', line)
+        if m and m.group(1) in SLOTS:
+            colors[m.group(1)] = "#" + m.group(2).lstrip("#").lower()
+    return colors
+
+
+def cmd_save(args) -> int:
+    """Write an edited palette, keeping any slot the caller left out."""
+    try:
+        edits = json.loads(args.json)
+    except ValueError as exc:
+        return emit({"error": f"bad palette json: {exc}"})
+
+    slug = slugify(args.name)
+    path = THEMES / f"{slug}.toml"
+    colors = read_theme(path) if path.exists() else {}
+    for slot, value in edits.items():
+        if slot not in SLOTS:
+            continue
+        if parse_hex(value) is None:
+            return emit({"error": f"{slot}: {value!r} is not a #rrggbb color"})
+        colors[slot] = "#" + str(value).lstrip("#").lower()
+
+    missing = [s for s in SLOTS if s not in colors]
+    if missing:
+        return emit({"error": f"palette is missing {', '.join(missing)}"})
+
+    THEMES.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(f'{s} = "{colors[s]}"' for s in SLOTS) + "\n")
+    return emit({"theme": slug, "colors": colors})
+
+
+def cmd_remove(args) -> int:
+    slug = slugify(args.name)
+    path = THEMES / f"{slug}.toml"
+    if not path.exists():
+        return emit({"error": f"no theme named {slug}"})
+    index = read_index()
+    if slug not in index:
+        # Refuse to delete themes we did not generate; a hand-written theme in
+        # the same directory is the user's own work.
+        return emit({"error": f"{slug} was not installed by this plugin"})
+    path.unlink()
+    index.pop(slug, None)
+    write_index(index)
+    return emit({"removed": slug})
+
+
+def cmd_sync(args) -> int:
+    """Build a cliamp theme from the colors of the current Omarchy theme.
+
+    cliamp is the one app in the Omarchy base set with no entry in
+    ~/.local/state/omarchy/current/theme/, so it is the only one that does not
+    follow the system theme. This closes that gap.
+    """
+    src = Path.home() / ".local/state/omarchy/current/theme/colors.toml"
+    if not src.exists():
+        return emit({"error": "no current Omarchy theme colors found"})
+
+    values = {}
+    for line in src.read_text().splitlines():
+        m = re.match(r'\s*([\w.-]+)\s*=\s*"?(#[0-9a-fA-F]{6})"?', line)
+        if m:
+            values[m.group(1).lower()] = m.group(2).lower()
+
+    def pick(*keys, fallback):
+        for k in keys:
+            if k in values:
+                return values[k]
+        return fallback
+
+    colors = {
+        "bg": pick("background", "bg", fallback="#101315"),
+        "fg": pick("muted", "foreground", fallback="#707880"),
+        "bright_fg": pick("foreground", "fg", fallback="#cacccc"),
+        "accent": pick("accent", "primary", fallback="#cacccc"),
+        "green": pick("green", "color2", fallback="#859900"),
+        "yellow": pick("yellow", "color3", fallback="#b58900"),
+        "red": pick("red", "urgent", "color1", fallback="#dc322f"),
+    }
+    THEMES.mkdir(parents=True, exist_ok=True)
+    (THEMES / "omarchy.toml").write_text(
+        "# Synced from the current Omarchy theme\n"
+        + "\n".join(f'{s} = "{colors[s]}"' for s in SLOTS)
+        + "\n"
+    )
+    index = read_index()
+    index["omarchy"] = {"md5": "", "source": "Omarchy theme"}
+    write_index(index)
+    return emit({"theme": "omarchy", "colors": colors})
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("search"); p.add_argument("query")
+    p.add_argument("--limit", type=int, default=30); p.add_argument("--offset", type=int, default=0)
+    p.set_defaults(fn=cmd_search)
+
+    p = sub.add_parser("browse")
+    p.add_argument("--limit", type=int, default=30); p.add_argument("--offset", type=int, default=0)
+    p.set_defaults(fn=cmd_browse)
+
+    p = sub.add_parser("featured", help="cached top skins (museum ranking)")
+    p.add_argument("--limit", type=int, default=30); p.add_argument("--offset", type=int, default=0)
+    p.set_defaults(fn=cmd_featured)
+
+    p = sub.add_parser("fetch-featured", help="download the top N skins into the cache")
+    p.add_argument("--count", type=int, default=200)
+    p.set_defaults(fn=cmd_fetch_featured)
+
+    for name, fn in (("preview", cmd_preview), ("install", cmd_install)):
+        p = sub.add_parser(name); p.add_argument("md5"); p.set_defaults(fn=fn)
+
+    p = sub.add_parser("extract", help="unpack sprite sheets for the player")
+    p.add_argument("md5"); p.add_argument("--force", action="store_true")
+    p.set_defaults(fn=cmd_extract)
+
+    p = sub.add_parser("use", help="wear a skin: unpack, theme cliamp, notify the player")
+    p.add_argument("md5"); p.add_argument("--no-theme", action="store_true")
+    p.set_defaults(fn=cmd_use)
+
+    sub.add_parser("current").set_defaults(fn=cmd_current)
+
+    p = sub.add_parser("make-theme", help="build a full Omarchy theme from a skin")
+    p.add_argument("md5")
+    p.set_defaults(fn=cmd_make_theme)
+
+    p = sub.add_parser("apply"); p.add_argument("name"); p.set_defaults(fn=cmd_apply)
+    p = sub.add_parser("remove"); p.add_argument("name"); p.set_defaults(fn=cmd_remove)
+    p = sub.add_parser("save"); p.add_argument("name"); p.add_argument("json")
+    p.set_defaults(fn=cmd_save)
+    sub.add_parser("themes").set_defaults(fn=cmd_themes)
+    sub.add_parser("sync").set_defaults(fn=cmd_sync)
+
+    args = ap.parse_args()
+    try:
+        return args.fn(args)
+    except Exception as exc:  # one error shape for the QML side
+        return emit({"error": f"{type(exc).__name__}: {exc}"})
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

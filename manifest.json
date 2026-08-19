@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.jw.omaamp",
+  "name": "OmaAmp",
+  "version": "0.1.0",
+  "author": "jw",
+  "license": "MIT",
+  "description": "Winamp on your desktop: browse 102,000 classic skins, dress the OmaAmp player and cliamp in any of them.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "OmaAmp",
+    "description": "Skin browser and launcher for the OmaAmp player, with cliamp theme conversion.",
+    "category": "Media",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "pageSize": 30
+    },
+    "schema": [
+      {
+        "key": "pageSize",
+        "type": "int",
+        "label": "Skins per page"
+      }
+    ]
+  }
+}
