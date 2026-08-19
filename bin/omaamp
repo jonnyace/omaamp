@@ -9,6 +9,7 @@
 #   omaamp                  launch (or focus, if already running)
 #   omaamp --skin <md5>     launch wearing a specific museum skin
 #   omaamp --zoom 3         integer pixel scale (default 2)
+#   omaamp --no-engine      do not start a cliamp daemon for the backend
 #   omaamp --quit
 set -euo pipefail
 
@@ -17,15 +18,47 @@ SKINNER="$ROOT/bin/skinner"
 STATE="${XDG_STATE_HOME:-$HOME/.local/state}/omaamp"
 mkdir -p "$STATE"
 
-ZOOM="${OMAAMP_ZOOM:-2}"
+# Default zoom targets ~2 physical pixels per skin pixel, whatever the
+# compositor scale: logical zoom * monitor scale = physical magnification.
+# On a scale-2 HiDPI panel that means zoom 1; on scale 1, zoom 2. --zoom
+# and OMAAMP_ZOOM still override.
+default_zoom() {
+  local scale
+  scale="$(hyprctl monitors -j 2>/dev/null | python3 -c '
+import json, sys
+try:
+    monitors = json.load(sys.stdin)
+    print(monitors[0].get("scale", 1) if monitors else 1)
+except Exception:
+    print(1)
+')"
+  python3 -c "print(max(1, round(2 / float('${scale:-1}'))))"
+}
+ZOOM="${OMAAMP_ZOOM:-$(default_zoom)}"
 SKIN_MD5=""
+ENGINE=1
+ENGINE_PID_FILE="$STATE/engine.pid"
+
+# Stop a cliamp daemon only if this launcher started it. A TUI the user opened
+# themselves is theirs; the pid file records what is ours to reap.
+stop_engine() {
+  [[ -f $ENGINE_PID_FILE ]] || return 0
+  local pid
+  pid="$(cat "$ENGINE_PID_FILE")"
+  rm -f "$ENGINE_PID_FILE"
+  if [[ -n $pid && -d /proc/$pid ]] && grep -q cliamp "/proc/$pid/cmdline" 2>/dev/null; then
+    kill "$pid" 2>/dev/null || true
+  fi
+}
 
 while (($#)); do
   case "$1" in
     --skin) SKIN_MD5="${2:-}"; shift 2 ;;
     --zoom) ZOOM="${2:-2}"; shift 2 ;;
+    --no-engine) ENGINE=0; shift ;;
     --quit)
       pkill -f "quickshell -p $ROOT/player" && echo "OmaAmp closed" || echo "OmaAmp was not running"
+      stop_engine
       exit 0 ;;
     -h|--help) sed -n '2,12p' "$0" | sed 's/^# \?//'; exit 0 ;;
     *) echo "omaamp: unknown option $1" >&2; exit 2 ;;
@@ -55,4 +88,18 @@ if command -v hyprctl >/dev/null && hyprctl clients -j 2>/dev/null | grep -q '"t
   exit 0
 fi
 
-exec quickshell -p "$ROOT/player"
+# OmaAmp is the interface; cliamp is the engine. When no cliamp is running,
+# start one headless (`cliamp -d`: no TUI, just the socket, MPRIS, and the
+# spectrum stream) so opening OmaAmp never spawns a second window.
+if (( ENGINE )) && command -v cliamp >/dev/null && [[ ! -S $HOME/.config/cliamp/cliamp.sock ]]; then
+  setsid cliamp -d >/dev/null 2>&1 &
+  echo $! >"$ENGINE_PID_FILE"
+fi
+
+# Foreground rather than exec: when the window closes -- Winamp's close
+# button quits the app -- the engine this launcher started goes with it,
+# which is exactly what closing Winamp did to the music. `|| true` because
+# the window being killed exits non-zero and set -e would otherwise abort
+# this script before the cleanup line it exists to reach.
+quickshell -p "$ROOT/player" || true
+stop_engine

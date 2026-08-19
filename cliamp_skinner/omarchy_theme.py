@@ -244,9 +244,12 @@ def render_wallpaper(
 ) -> None:
     """Gradient between the theme's background shades, skin window centred.
 
-    The sprite scale is chosen so the window fills roughly half the screen
-    width at a whole-number multiple -- fractional scaling would smear the
-    pixel art this whole project exists to preserve.
+    The sprite scale is chosen so the window fills roughly a third of the
+    screen width at a whole-number multiple -- fractional scaling would smear
+    the pixel art this whole project exists to preserve. The caller passes the
+    monitor's *physical* resolution: the image maps 1:1 to hardware pixels
+    that way, and any other size gets resampled by the wallpaper backend,
+    which turns pixel art to mush.
     """
     def hx(name: str) -> RGB:
         v = colors[name].lstrip("#")
@@ -263,7 +266,7 @@ def render_wallpaper(
     decoded = decode_bmp(main_bmp) if main_bmp else None
     if decoded:
         sw, sh, sprite = decoded
-        scale = max(1, round(width * 0.45 / sw))
+        scale = max(2, round(width * 0.32 / sw))
         ox = (width - sw * scale) // 2
         oy = (height - sh * scale) // 2
         for sy in range(sh):
@@ -287,11 +290,19 @@ def build_theme_dir(
     theme: Theme,
     main_bmp: bytes | None,
     source: str,
+    *,
+    width: int = 2560,
+    height: int = 1600,
 ) -> dict[str, str]:
     """Write a ready-to-apply Omarchy theme directory. Returns the colors."""
     colors = build_colors(skin, theme)
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "backgrounds").mkdir(exist_ok=True)
     write_colors_toml(dest / "colors.toml", colors, source)
-    render_wallpaper(dest / "backgrounds" / "1-omaamp.png", colors, main_bmp)
+    render_wallpaper(dest / "backgrounds" / "1-omaamp.png", colors, main_bmp,
+                     width=width, height=height)
+    # The theme switcher shows preview.png when a theme carries one; the
+    # wallpaper -- skin window on the theme's own gradient -- is exactly the
+    # right pitch for what applying this theme does.
+    (dest / "preview.png").write_bytes((dest / "backgrounds" / "1-omaamp.png").read_bytes())
     return colors

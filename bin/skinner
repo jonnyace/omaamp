@@ -370,7 +370,17 @@ def cmd_make_theme(args) -> int:
             main_bmp = zf.read(members["main.bmp"])
 
     dest = Path.home() / ".config" / "omarchy" / "themes" / slug
-    colors = omarchy_theme.build_theme_dir(dest, skin, built, main_bmp, filename)
+    # Physical resolution, so the wallpaper maps 1:1 to hardware pixels; any
+    # backend resampling of pixel art shows immediately on a HiDPI panel.
+    width, height = 2560, 1600
+    try:
+        mon = json.loads(subprocess.run(["hyprctl", "monitors", "-j"],
+                                        capture_output=True, text=True, timeout=5).stdout)[0]
+        width, height = int(mon["width"]), int(mon["height"])
+    except Exception:
+        pass
+    colors = omarchy_theme.build_theme_dir(dest, skin, built, main_bmp, filename,
+                                           width=width, height=height)
     return emit({
         "theme": slug,
         "dir": str(dest),

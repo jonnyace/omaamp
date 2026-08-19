@@ -1,0 +1,8 @@
+#!/bin/bash
+# Re-select cliamp's Omarchy-rendered theme after a theme switch, so a running
+# player picks the new palette up without being restarted. Quietly a no-op
+# when cliamp is not running or the user has chosen a different theme.
+current="$(cliamp theme 2>/dev/null | head -1)"
+if [[ -z $current || $current == *omarchy* ]]; then
+  cliamp theme omarchy >/dev/null 2>&1 || true
+fi

@@ -17,7 +17,7 @@ MARK_BEGIN="-- >>> OmaAmp"
 MARK_END="-- <<< OmaAmp"
 
 uninstall() {
-  rm -f "$BIN/omaamp" "$APPS/omaamp.desktop"
+  rm -f "$BIN/omaamp" "$APPS/omaamp.desktop"         "$HOME/.config/omarchy/themed/cliamp.toml.tpl"         "$HOME/.config/cliamp/themes/omarchy.toml"         "$HOME/.config/omarchy/hooks/theme-set.d/50-omaamp-cliamp"
   if [[ -f $HYPR ]] && grep -qF -- "$MARK_BEGIN" "$HYPR"; then
     cp "$HYPR" "$HYPR.bak.$(date +%s)"
     sed -i "/${MARK_BEGIN}/,/${MARK_END}/d" "$HYPR"
@@ -53,6 +53,18 @@ StartupNotify=true
 EOF
 echo "installed $APPS/omaamp.desktop"
 command -v update-desktop-database >/dev/null && update-desktop-database "$APPS" 2>/dev/null || true
+
+# --- cliamp follows the Omarchy theme --------------------------------------
+# cliamp is the one app in the Omarchy base set with no entry in the themed/
+# template engine, so it is the only one that ignores theme switches. The
+# template renders into the current-theme state dir on every switch; the
+# symlink makes it selectable inside cliamp as "omarchy"; the hook re-applies
+# it so a running player recolors without a restart.
+mkdir -p "$HOME/.config/omarchy/themed" "$HOME/.config/cliamp/themes"          "$HOME/.config/omarchy/hooks/theme-set.d"
+cp "$ROOT/assets/cliamp.toml.tpl" "$HOME/.config/omarchy/themed/cliamp.toml.tpl"
+ln -sf "$HOME/.local/state/omarchy/current/theme/cliamp.toml"        "$HOME/.config/cliamp/themes/omarchy.toml"
+cp "$ROOT/assets/cliamp-theme-set-hook"    "$HOME/.config/omarchy/hooks/theme-set.d/50-omaamp-cliamp"
+echo "installed cliamp theme template + theme-set hook"
 
 # --- Hyprland rules -------------------------------------------------------
 # Quickshell's appId is read-only, so every instance is class org.quickshell.
