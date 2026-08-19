@@ -222,9 +222,9 @@ def cmd_browse(args) -> int:
 SHEETS = (
     "main.bmp", "titlebar.bmp", "cbuttons.bmp", "text.bmp", "posbar.bmp",
     "volume.bmp", "balance.bmp", "shufrep.bmp", "monoster.bmp", "playpaus.bmp",
-    "numbers.bmp", "nums_ex.bmp",
+    "numbers.bmp", "nums_ex.bmp", "pledit.bmp",
     # Not a sheet: the analyzer's 24-colour ramp, read by the player at runtime.
-    "viscolor.txt",
+    "viscolor.txt", "pledit.txt",
 )
 
 
@@ -387,6 +387,129 @@ def cmd_make_theme(args) -> int:
         "colors": colors,
         "apply": f"omarchy theme set {slug}",
     })
+
+
+# The 11 radio streams cliamp ships as its default queue. The daemon cannot
+# enumerate its own queue over IPC, so the playlist window lists these (and
+# the user's TOML playlists) instead -- same content, addressable.
+STREAMS = [
+    ("Lofi Stream", "lofi"), ("Synthwave Stream", "synthwave"),
+    ("EDM Stream", "edm"), ("NCS Stream", "ncs"),
+    ("NCS House Stream", "ncs-house"), ("NCS Dubstep Stream", "ncs-dubstep"),
+    ("NCS Drum & Bass Stream", "ncs-dnb"), ("NCS Trap Stream", "ncs-trap"),
+    ("NCS Phonk Stream", "ncs-phonk"), ("NCS Pop Stream", "ncs-pop"),
+    ("NCS Chill Stream", "ncs-chill"),
+]
+PLAYLISTS_DIR = Path.home() / ".config" / "cliamp" / "playlists"
+NOW_PLAYLIST = "omaamp-now"
+
+
+def _sock(payload: dict) -> dict:
+    import socket as _socket
+    path = Path.home() / ".config" / "cliamp" / "cliamp.sock"
+    s = _socket.socket(_socket.AF_UNIX)
+    s.settimeout(5)
+    try:
+        s.connect(str(path))
+        s.sendall((json.dumps(payload) + "\n").encode())
+        return json.loads(s.recv(1 << 16).decode(errors="replace"))
+    finally:
+        s.close()
+
+
+def _read_playlists() -> list[dict]:
+    import tomllib
+    out = []
+    if not PLAYLISTS_DIR.is_dir():
+        return out
+    for f in sorted(PLAYLISTS_DIR.glob("*.toml")):
+        name = f.stem
+        if name == NOW_PLAYLIST:
+            continue  # our own scratch playlist, not user content
+        try:
+            doc = tomllib.loads(f.read_text())
+        except Exception:
+            continue
+        tracks = [
+            {"title": t.get("title") or Path(str(t.get("path", ""))).name, "path": t.get("path", "")}
+            for t in doc.get("track", [])
+            if t.get("path")
+        ]
+        if tracks:
+            out.append({"name": name, "tracks": tracks})
+    return out
+
+
+def cmd_pl(args) -> int:
+    """Everything the playlist window shows, in one call."""
+    now = {}
+    try:
+        now = _sock({"cmd": "status"})
+    except Exception:
+        pass
+    return emit({
+        "now": {
+            "state": now.get("state", "stopped"),
+            "title": (now.get("track") or {}).get("title", ""),
+            "path": (now.get("track") or {}).get("path", ""),
+            "playlist": now.get("playlist", ""),
+        },
+        "streams": [
+            {"title": t, "path": f"http://radio.cliamp.stream/{slug}/stream"}
+            for t, slug in STREAMS
+        ],
+        "playlists": _read_playlists(),
+    })
+
+
+def _toml_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _load_now(tracks: list[tuple[str, str]]) -> dict:
+    """Write the scratch playlist and make cliamp play it, starting now.
+
+    This is the only "play THIS, immediately" mechanism the daemon offers:
+    `queue` only appends, and `play` ignores a path argument. Loading a
+    playlist replaces the queue and starts playback at its first track, so
+    the scratch file is written with the chosen track first.
+    """
+    PLAYLISTS_DIR.mkdir(parents=True, exist_ok=True)
+    body = "".join(
+        f'[[track]]\ntitle = "{_toml_escape(t)}"\npath = "{_toml_escape(p)}"\n\n'
+        for t, p in tracks
+    )
+    (PLAYLISTS_DIR / f"{NOW_PLAYLIST}.toml").write_text(body)
+    return _sock({"cmd": "load", "playlist": NOW_PLAYLIST})
+
+
+def cmd_play_now(args) -> int:
+    title = args.title or (Path(args.path).name if not args.path.startswith("http") else args.path)
+    result = _load_now([(title, args.path)])
+    if not result.get("ok"):
+        return emit({"error": result.get("error", "cliamp rejected the load")})
+    return emit({"playing": title})
+
+
+def cmd_play_track(args) -> int:
+    """Play track N of a playlist by loading it rotated to start there.
+
+    Rotation keeps every track reachable with next/prev and keeps their
+    relative order, which is as close to Winamp's "start at the highlighted
+    track" as the IPC surface allows.
+    """
+    for pl in _read_playlists():
+        if pl["name"] != args.playlist:
+            continue
+        tracks = [(t["title"], t["path"]) for t in pl["tracks"]]
+        if not (0 <= args.index < len(tracks)):
+            return emit({"error": f"track {args.index} out of range"})
+        rotated = tracks[args.index:] + tracks[:args.index]
+        result = _load_now(rotated)
+        if not result.get("ok"):
+            return emit({"error": result.get("error", "cliamp rejected the load")})
+        return emit({"playing": rotated[0][0], "playlist": args.playlist})
+    return emit({"error": f"no playlist named {args.playlist}"})
 
 
 def cmd_current(args) -> int:
@@ -556,6 +679,16 @@ def main() -> int:
     p = sub.add_parser("make-theme", help="build a full Omarchy theme from a skin")
     p.add_argument("md5")
     p.set_defaults(fn=cmd_make_theme)
+
+    sub.add_parser("pl", help="playlist window payload").set_defaults(fn=cmd_pl)
+
+    p = sub.add_parser("play-now", help="play a file or stream URL immediately")
+    p.add_argument("path"); p.add_argument("--title", default="")
+    p.set_defaults(fn=cmd_play_now)
+
+    p = sub.add_parser("play-track", help="play track N of a named playlist")
+    p.add_argument("playlist"); p.add_argument("index", type=int)
+    p.set_defaults(fn=cmd_play_track)
 
     p = sub.add_parser("apply"); p.add_argument("name"); p.set_defaults(fn=cmd_apply)
     p = sub.add_parser("remove"); p.add_argument("name"); p.set_defaults(fn=cmd_remove)

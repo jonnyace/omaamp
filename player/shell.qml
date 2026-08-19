@@ -15,7 +15,7 @@ import Quickshell
 ShellRoot {
   Player {
     visible: true
-    zoom: Number(Quickshell.env("OMAAMP_ZOOM") || 2)
+    baseZoom: Number(Quickshell.env("OMAAMP_ZOOM") || 2)
     // The skin itself comes from ~/.local/state/omaamp/current.json, which
     // the Player watches -- the same channel the bar plugin uses to restyle a
     // running instance, so launch and live-swap are one code path.

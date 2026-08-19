@@ -71,19 +71,19 @@ echo "installed cliamp theme template + theme-set hook"
 # The title is ours, so rules match on class *and* title -- the same approach
 # Omarchy uses for its own Quickshell windows.
 if [[ -f $HYPR ]]; then
-  if grep -qF -- "$MARK_BEGIN" "$HYPR"; then
-    echo "Hyprland rules already present, leaving them alone"
-  else
-    cp "$HYPR" "$HYPR.bak.$(date +%s)"
-    cat >>"$HYPR" <<EOF
+  cp "$HYPR" "$HYPR.bak.$(date +%s)"
+  # Replace any previous block so rule changes ship with upgrades.
+  sed -i "/${MARK_BEGIN}/,/${MARK_END}/d" "$HYPR"
+  cat >>"$HYPR" <<EOF
 
-$MARK_BEGIN — the player keeps Winamp's own chrome, so Hyprland adds none.
-o.window({ class = "^org.quickshell\$", title = "^OmaAmp.*\$" }, { float = true })
+$MARK_BEGIN — no forced float: OmaAmp opens as its own tile like any app,
+-- so it never hovers over other windows uninvited. Toggle floating with the
+-- usual binding when you want it parked on top; the skin scales to its tile
+-- in whole-pixel steps either way. No rounding: Winamp corners are square.
 o.window({ class = "^org.quickshell\$", title = "^OmaAmp.*\$" }, { rounding = 0 })
 $MARK_END
 EOF
-    echo "added Hyprland rules to $HYPR (backup alongside it)"
-  fi
+  echo "refreshed Hyprland rules in $HYPR (backup alongside it)"
 else
   echo "note: $HYPR not found — add the float rule yourself if you want it undecorated" >&2
 fi

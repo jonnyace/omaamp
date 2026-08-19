@@ -79,6 +79,8 @@ if [[ ! -f "${XDG_STATE_HOME:-$HOME/.local/state}/omaamp/current.json" ]]; then
 fi
 
 export OMAAMP_ZOOM="$ZOOM"
+# The playlist window shells out for its data and playback actions.
+export OMAAMP_HELPER="$SKINNER"
 
 # Quickshell's appId is read-only, so every instance is class org.quickshell.
 # The window title is ours, though, which is what the Hyprland rules match on

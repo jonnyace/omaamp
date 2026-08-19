@@ -18,8 +18,16 @@ FloatingWindow {
   // Directory of normalised sprite sheets, from `skinner use`.
   property string skinDir: ""
   property bool extendedDigits: false
-  property int zoom: 2
   property string skinName: ""
+
+  // Launch-time zoom sets the initial window size; after that the skin
+  // scales to whatever space the window actually has, at integer steps only
+  // -- a tiled OmaAmp fills its tile at 2x or 3x instead of rattling around
+  // at launch size or smearing at a fractional one.
+  property int baseZoom: 2
+  readonly property int zoom: Math.max(1, Math.min(
+    Math.floor(width / S.MAIN_WIDTH),
+    Math.floor(height / S.MAIN_HEIGHT)))
 
   // The bar plugin and this app are separate processes; the plugin writes
   // ~/.local/state/omaamp/current.json and this watcher hot-swaps the skin,
@@ -89,10 +97,13 @@ FloatingWindow {
   }
 
   title: "OmaAmp" + (skinName.length ? " — " + skinName : "")
-  implicitWidth: S.MAIN_WIDTH * zoom
-  implicitHeight: S.MAIN_HEIGHT * zoom
-  minimumSize: Qt.size(S.MAIN_WIDTH * zoom, S.MAIN_HEIGHT * zoom)
-  maximumSize: Qt.size(S.MAIN_WIDTH * zoom, S.MAIN_HEIGHT * zoom)
+  implicitWidth: S.MAIN_WIDTH * baseZoom
+  implicitHeight: S.MAIN_HEIGHT * baseZoom
+  minimumSize: Qt.size(S.MAIN_WIDTH, S.MAIN_HEIGHT)
+  // Quickshell leaves an unset maximumSize at the window's own size, which
+  // reads as "non-resizable" and makes Hyprland auto-float it. Explicitly
+  // unbounded is what lets the window tile.
+  maximumSize: Qt.size(16384, 16384)
   color: "#000000"
 
   function transport(action) {
@@ -460,6 +471,21 @@ FloatingWindow {
       }
     }
 
+    // ---- Playlist toggle ---------------------------------------------------
+    SkinSprite {
+      dir: root.skinDir
+      sheet: "shufrep.bmp"
+      zoom: root.zoom
+      rect: playlist_.shown ? S.SHUFREP.playlistOn : S.SHUFREP.playlistOff
+      x: S.SHUFREP.playlistAt[0] * root.zoom
+      y: S.SHUFREP.playlistAt[1] * root.zoom
+
+      MouseArea {
+        anchors.fill: parent
+        onClicked: playlist_.shown = !playlist_.shown
+      }
+    }
+
     // ---- Transport -------------------------------------------------------
     Repeater {
       model: S.BUTTONS
@@ -483,5 +509,21 @@ FloatingWindow {
         }
       }
     }
+  }
+
+  // scripting surface: quickshell ipc -p <player dir> call omaamp playlist
+  IpcHandler {
+    target: "omaamp"
+
+    function playlist(): void { playlist_.shown = !playlist_.shown }
+    function show(): void { root.visible = true }
+    function quit(): void { Qt.quit() }
+  }
+
+  PlaylistWindow {
+    id: playlist_
+    skinDir: root.skinDir
+    helper: Quickshell.env("OMAAMP_HELPER") || ""
+    zoom: Math.max(1, root.baseZoom)
   }
 }
