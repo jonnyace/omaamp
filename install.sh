@@ -79,8 +79,11 @@ if [[ -f $HYPR ]]; then
 $MARK_BEGIN — no forced float: OmaAmp opens as its own tile like any app,
 -- so it never hovers over other windows uninvited. Toggle floating with the
 -- usual binding when you want it parked on top; the skin scales to its tile
--- in whole-pixel steps either way. No rounding: Winamp corners are square.
+-- in whole-pixel steps either way. No rounding (Winamp corners are square)
+-- and no border: the letterbox is transparent, so a border would outline an
+-- invisible rectangle instead of the skin.
 o.window({ class = "^org.quickshell\$", title = "^OmaAmp.*\$" }, { rounding = 0 })
+o.window({ class = "^org.quickshell\$", title = "^OmaAmp.*\$" }, { border_size = 0 })
 $MARK_END
 EOF
   echo "refreshed Hyprland rules in $HYPR (backup alongside it)"

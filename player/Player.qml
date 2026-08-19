@@ -25,7 +25,12 @@ FloatingWindow {
   // -- a tiled OmaAmp fills its tile at 2x or 3x instead of rattling around
   // at launch size or smearing at a fractional one.
   property int baseZoom: 2
+  // Fit the tile, but never past double the physically-correct size: real
+  // Winamp had exactly normal and double-size, and letting a large tile
+  // push the art to 4x logical (8x physical on a HiDPI panel) reads as a
+  // rendering mistake, not a big player.
   readonly property int zoom: Math.max(1, Math.min(
+    baseZoom * 2,
     Math.floor(width / S.MAIN_WIDTH),
     Math.floor(height / S.MAIN_HEIGHT)))
 
