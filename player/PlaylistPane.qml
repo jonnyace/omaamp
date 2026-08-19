@@ -1,25 +1,27 @@
 import QtQuick
-import Quickshell
 import Quickshell.Io
 import "sprites.js" as S
 
-// The Winamp playlist editor: its own window, wearing the skin's own
-// playlist chrome. The frame is built from pledit.bmp exactly the way
-// Winamp built it -- fixed corner pieces, tiles repeated to fill whatever
-// size the window is -- and the list inside uses pledit.txt's colors and
-// font, which is precisely the split the original made: bitmap frame,
-// text-mode contents.
+// The docked playlist editor: not a window of its own but the pane Winamp
+// grew beneath the main window when PL lit up. The frame is built from
+// pledit.bmp exactly the way Winamp built it -- fixed corner pieces, tiles
+// repeated to fill whatever size the pane is -- and the list inside uses
+// pledit.txt's colors and font: bitmap frame, text-mode contents, the
+// original's own split.
 //
 // What it lists is what cliamp's IPC can actually address: the 11 built-in
 // radio streams and every TOML playlist in ~/.config/cliamp/playlists/,
 // with a paste bar that plays any file path or stream URL immediately.
-FloatingWindow {
+Item {
   id: root
 
   property string skinDir: ""
   property string helper: ""
   property int zoom: 2
+  // Owned by the PL button in Player.qml; the pledit close box clears it.
   property bool shown: false
+  // The hosting window's focus state, for the active/idle title-bar art.
+  property bool windowActive: true
 
   // ---- pledit.txt colours ------------------------------------------------
   property color bgColor: "#000000"
@@ -124,19 +126,8 @@ FloatingWindow {
     }
   }
 
-  onShownChanged: {
-    visible = shown
-    if (shown) refresh()
-  }
-  onVisibleChanged: if (!visible && shown) shown = false
-
-  visible: false
-  title: "OmaAmp Playlist"
-  implicitWidth: S.MAIN_WIDTH * zoom
-  implicitHeight: S.MAIN_HEIGHT * 2 * zoom
-  minimumSize: Qt.size(S.MAIN_WIDTH, S.MAIN_HEIGHT)
-  maximumSize: Qt.size(16384, 16384)
-  color: "transparent"
+  visible: shown
+  onShownChanged: if (shown) refresh()
 
   readonly property real fontPx: 8 * zoom
   readonly property int rowH: 11 * zoom
@@ -155,7 +146,7 @@ FloatingWindow {
     SkinSprite {
       id: topLeft
       dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
-      rect: root.active ? S.PLEDIT.topLeft : S.PLEDIT.topLeftIdle
+      rect: root.windowActive ? S.PLEDIT.topLeft : S.PLEDIT.topLeftIdle
     }
 
     // Tiles fill the whole strip between the corners; the title sits on top.
@@ -170,21 +161,21 @@ FloatingWindow {
 
         SkinSprite {
           dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
-          rect: root.active ? S.PLEDIT.topTile : S.PLEDIT.topTileIdle
+          rect: root.windowActive ? S.PLEDIT.topTile : S.PLEDIT.topTileIdle
         }
       }
     }
 
     SkinSprite {
       dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
-      rect: root.active ? S.PLEDIT.titleBar : S.PLEDIT.titleBarIdle
+      rect: root.windowActive ? S.PLEDIT.titleBar : S.PLEDIT.titleBarIdle
       anchors.horizontalCenter: parent.horizontalCenter
     }
 
     SkinSprite {
       id: topRight
       dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
-      rect: root.active ? S.PLEDIT.topRight : S.PLEDIT.topRightIdle
+      rect: root.windowActive ? S.PLEDIT.topRight : S.PLEDIT.topRightIdle
       anchors.right: parent.right
     }
 

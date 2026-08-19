@@ -110,6 +110,17 @@ FloatingWindow {
   // shows through around the artwork instead of a black slab.
   color: "transparent"
 
+  // One window, Winamp-docked: toggling PL grows or shrinks the window by
+  // a main-window-height so the pane appears attached below the skin. In a
+  // tile the compositor ignores the resize request and the pane simply uses
+  // the space the tile already grants.
+  function togglePlaylist() {
+    playlist_.shown = !playlist_.shown
+    // implicitHeight is the client-side resize request; a tiling layout
+    // ignores it, a floating window honors it.
+    implicitHeight = (S.MAIN_HEIGHT * (playlist_.shown ? 2 : 1)) * zoom
+  }
+
   function transport(action) {
     if (!player) return
     if (action === "play") {
@@ -198,8 +209,15 @@ FloatingWindow {
     onTriggered: root.marqueeOffset++
   }
 
-  Item {
+  // Docked stack, centered as one unit: the main window with the playlist
+  // grown beneath it when PL is lit -- one window, one tile, like Winamp
+  // with the playlist snapped on.
+  Column {
+    id: stack
     anchors.centerIn: parent
+    spacing: 0
+
+    Item {
     width: S.MAIN_WIDTH * root.zoom
     height: S.MAIN_HEIGHT * root.zoom
 
@@ -486,7 +504,7 @@ FloatingWindow {
 
       MouseArea {
         anchors.fill: parent
-        onClicked: playlist_.shown = !playlist_.shown
+        onClicked: root.togglePlaylist()
       }
     }
 
@@ -513,21 +531,29 @@ FloatingWindow {
         }
       }
     }
+    }
+
+    PlaylistPane {
+      id: playlist_
+      skinDir: root.skinDir
+      helper: Quickshell.env("OMAAMP_HELPER") || ""
+      zoom: root.zoom
+      windowActive: root.active === true
+      width: S.MAIN_WIDTH * root.zoom
+      // In a tile, fill whatever space remains under the main window; when
+      // floating there is exactly the classic one-main-height pane, because
+      // togglePlaylist() resizes the window by that much.
+      height: Math.max(S.MAIN_HEIGHT * root.zoom,
+                       root.height - S.MAIN_HEIGHT * root.zoom)
+    }
   }
 
   // scripting surface: quickshell ipc -p <player dir> call omaamp playlist
   IpcHandler {
     target: "omaamp"
 
-    function playlist(): void { playlist_.shown = !playlist_.shown }
+    function playlist(): void { root.togglePlaylist() }
     function show(): void { root.visible = true }
     function quit(): void { Qt.quit() }
-  }
-
-  PlaylistWindow {
-    id: playlist_
-    skinDir: root.skinDir
-    helper: Quickshell.env("OMAAMP_HELPER") || ""
-    zoom: Math.max(1, root.baseZoom)
   }
 }
