@@ -53,10 +53,15 @@ FloatingWindow {
 
   readonly property var players: Mpris.players ? Mpris.players.values : []
 
-  // Prefer whatever is actually playing; fall back to the first player that
-  // exists so the window still shows a track when everything is paused.
+  // cliamp first, always: it is the engine this app manages, so the window
+  // should read it even while it sits stopped next to a Chromium tab that
+  // happens to be playing. Anything else is only shown when no cliamp is on
+  // the bus at all -- then whatever is playing, then whatever exists.
   readonly property var player: {
-    for (var i = 0; i < players.length; i++)
+    var i
+    for (i = 0; i < players.length; i++)
+      if (players[i] && String(players[i].dbusName || "").indexOf("cliamp") !== -1) return players[i]
+    for (i = 0; i < players.length; i++)
       if (players[i] && players[i].isPlaying) return players[i]
     return players.length ? players[0] : null
   }
@@ -100,11 +105,10 @@ FloatingWindow {
   implicitWidth: S.MAIN_WIDTH * baseZoom
   implicitHeight: S.MAIN_HEIGHT * baseZoom
   minimumSize: Qt.size(S.MAIN_WIDTH, S.MAIN_HEIGHT)
-  // Quickshell leaves an unset maximumSize at the window's own size, which
-  // reads as "non-resizable" and makes Hyprland auto-float it. Explicitly
-  // unbounded is what lets the window tile.
   maximumSize: Qt.size(16384, 16384)
-  color: "#000000"
+  // Transparent letterbox: in a tile bigger than the skin, the wallpaper
+  // shows through around the artwork instead of a black slab.
+  color: "transparent"
 
   function transport(action) {
     if (!player) return

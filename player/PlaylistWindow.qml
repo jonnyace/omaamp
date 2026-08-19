@@ -3,15 +3,16 @@ import Quickshell
 import Quickshell.Io
 import "sprites.js" as S
 
-// The Winamp playlist editor, reimagined for what cliamp's IPC can actually
-// do. The daemon cannot enumerate its live queue, so this window lists what
-// *is* addressable -- the 11 built-in radio streams and every TOML playlist
-// in ~/.config/cliamp/playlists/ -- and plays any entry immediately through
-// the helper's scratch-playlist mechanism. A paste bar at the bottom takes a
-// file path or stream URL, which is the "open file" Winamp's Eject offered.
+// The Winamp playlist editor: its own window, wearing the skin's own
+// playlist chrome. The frame is built from pledit.bmp exactly the way
+// Winamp built it -- fixed corner pieces, tiles repeated to fill whatever
+// size the window is -- and the list inside uses pledit.txt's colors and
+// font, which is precisely the split the original made: bitmap frame,
+// text-mode contents.
 //
-// Colours come from the skin's own pledit.txt, which is exactly the file
-// Winamp invented for this window: NormalBG/Normal/Current/SelectedBG.
+// What it lists is what cliamp's IPC can actually address: the 11 built-in
+// radio streams and every TOML playlist in ~/.config/cliamp/playlists/,
+// with a paste bar that plays any file path or stream URL immediately.
 FloatingWindow {
   id: root
 
@@ -56,7 +57,6 @@ FloatingWindow {
   }
 
   // ---- Data ----------------------------------------------------------------
-  // Rows: {kind: "header"|"track", label, path, playlist, index}
   property var rows: []
   property string nowTitle: ""
   property string status: ""
@@ -128,7 +128,6 @@ FloatingWindow {
     visible = shown
     if (shown) refresh()
   }
-  // Track external closes (compositor kill, etc.) back into the toggle state.
   onVisibleChanged: if (!visible && shown) shown = false
 
   visible: false
@@ -136,155 +135,265 @@ FloatingWindow {
   implicitWidth: S.MAIN_WIDTH * zoom
   implicitHeight: S.MAIN_HEIGHT * 2 * zoom
   minimumSize: Qt.size(S.MAIN_WIDTH, S.MAIN_HEIGHT)
-  color: bgColor
+  maximumSize: Qt.size(16384, 16384)
+  color: "transparent"
 
-  readonly property int pad: 6 * zoom
-  readonly property int rowH: 11 * zoom
   readonly property real fontPx: 8 * zoom
+  readonly property int rowH: 11 * zoom
 
-  Column {
+  // Frame thicknesses, in skin pixels.
+  readonly property int frameTop: 20
+  readonly property int frameBottom: 38
+  readonly property int frameLeft: 12
+  readonly property int frameRight: 20
+
+  Item {
+    id: frame
     anchors.fill: parent
-    anchors.margins: root.pad
-    spacing: root.pad / 2
 
-    // Title strip, Winamp-style centred caption.
-    Rectangle {
-      width: parent.width
-      height: root.rowH
-      color: root.selColor
-
-      Text {
-        anchors.centerIn: parent
-        text: "OMAAMP PLAYLIST" + (root.nowTitle.length ? "  —  " + root.nowTitle : "")
-        color: root.currentColor
-        font.family: root.fontName.length ? root.fontName : "monospace"
-        font.pixelSize: root.fontPx
-        elide: Text.ElideRight
-        width: parent.width - root.pad * 2
-        horizontalAlignment: Text.AlignHCenter
-      }
-
-      MouseArea {
-        anchors.fill: parent
-        onPressed: if (root.Window.window) root.Window.window.startSystemMove()
-      }
+    // ---- Top row: corner, tiles, centred title, corner -------------------
+    SkinSprite {
+      id: topLeft
+      dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
+      rect: root.active ? S.PLEDIT.topLeft : S.PLEDIT.topLeftIdle
     }
 
-    ListView {
-      id: list
-      width: parent.width
-      height: parent.height - y - entryRow.height - root.pad
-      clip: true
-      model: root.rows
-      boundsBehavior: Flickable.StopAtBounds
-
-      delegate: Rectangle {
-        required property var modelData
-        width: list.width
-        height: root.rowH
-        color: hover.containsMouse && modelData.kind === "track" ? root.selColor : "transparent"
-
-        readonly property bool isCurrent: modelData.kind === "track"
-          && root.nowTitle.length && modelData.title === root.nowTitle
-
-        Text {
-          anchors.verticalCenter: parent.verticalCenter
-          x: modelData.kind === "header" ? 0 : root.pad
-          text: modelData.label
-          color: modelData.kind === "header" ? root.selColor
-               : (parent.isCurrent ? root.currentColor : root.fgColor)
-          font.family: root.fontName.length ? root.fontName : "monospace"
-          font.pixelSize: root.fontPx
-          font.bold: modelData.kind === "header" || parent.isCurrent
-          elide: Text.ElideRight
-          width: list.width - root.pad * 2
-        }
-
-        MouseArea {
-          id: hover
-          anchors.fill: parent
-          hoverEnabled: true
-          cursorShape: modelData.kind === "track" ? Qt.PointingHandCursor : Qt.ArrowCursor
-          onDoubleClicked: root.playRow(modelData)
-          onClicked: root.playRow(modelData)
-        }
-      }
-    }
-
-    // "Open": a path or URL, played immediately. Winamp's Eject, minus the
-    // file dialog a layer-shell-less standalone shell cannot summon.
+    // Tiles fill the whole strip between the corners; the title sits on top.
     Row {
-      id: entryRow
+      anchors.left: topLeft.right
+      anchors.right: topRight.left
+      spacing: 0
+      clip: true
+
+      Repeater {
+        model: Math.max(0, Math.ceil((frame.width - 50 * root.zoom) / (25 * root.zoom)))
+
+        SkinSprite {
+          dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
+          rect: root.active ? S.PLEDIT.topTile : S.PLEDIT.topTileIdle
+        }
+      }
+    }
+
+    SkinSprite {
+      dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
+      rect: root.active ? S.PLEDIT.titleBar : S.PLEDIT.titleBarIdle
+      anchors.horizontalCenter: parent.horizontalCenter
+    }
+
+    SkinSprite {
+      id: topRight
+      dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
+      rect: root.active ? S.PLEDIT.topRight : S.PLEDIT.topRightIdle
+      anchors.right: parent.right
+    }
+
+    // The whole top strip drags the window; the close hotspot wins over it.
+    MouseArea {
       width: parent.width
-      spacing: root.pad / 2
+      height: root.frameTop * root.zoom
+      onPressed: function(mouse) {
+        var cx = frame.width - S.PLEDIT.closeAt[0] * root.zoom
+        var cy = S.PLEDIT.closeAt[1] * root.zoom
+        if (mouse.x >= cx && mouse.y >= cy && mouse.y <= cy + S.PLEDIT.closeAt[3] * root.zoom) {
+          root.shown = false
+          return
+        }
+        if (root.Window.window) root.Window.window.startSystemMove()
+      }
+    }
 
-      Rectangle {
-        width: parent.width - playBtn.width - parent.spacing
-        height: root.rowH + 2 * root.zoom
-        color: "transparent"
-        border.color: root.fgColor
-        border.width: 1
+    // ---- Sides ------------------------------------------------------------
+    Column {
+      y: root.frameTop * root.zoom
+      height: frame.height - (root.frameTop + root.frameBottom) * root.zoom
+      clip: true
 
-        TextInput {
-          id: entry
-          anchors.fill: parent
-          anchors.margins: 2 * root.zoom
-          color: root.currentColor
-          font.family: root.fontName.length ? root.fontName : "monospace"
-          font.pixelSize: root.fontPx
+      Repeater {
+        model: Math.max(0, Math.ceil(frame.height / (29 * root.zoom)))
+
+        SkinSprite {
+          dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
+          rect: S.PLEDIT.leftTile
+        }
+      }
+    }
+
+    Column {
+      anchors.right: parent.right
+      y: root.frameTop * root.zoom
+      height: frame.height - (root.frameTop + root.frameBottom) * root.zoom
+      clip: true
+
+      Repeater {
+        model: Math.max(0, Math.ceil(frame.height / (29 * root.zoom)))
+
+        SkinSprite {
+          dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
+          rect: S.PLEDIT.rightTile
+        }
+      }
+    }
+
+    // ---- Bottom row ---------------------------------------------------------
+    Row {
+      anchors.bottom: parent.bottom
+      x: S.PLEDIT.bottomLeft[2] * root.zoom
+      width: Math.max(0, frame.width - (S.PLEDIT.bottomLeft[2] + S.PLEDIT.bottomRight[2]) * root.zoom)
+      spacing: 0
+      clip: true
+
+      Repeater {
+        model: Math.max(0, Math.ceil(frame.width / (25 * root.zoom)))
+
+        SkinSprite {
+          dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
+          rect: S.PLEDIT.bottomTile
+        }
+      }
+    }
+
+    SkinSprite {
+      dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
+      rect: S.PLEDIT.bottomLeft
+      anchors.bottom: parent.bottom
+    }
+
+    SkinSprite {
+      dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
+      rect: S.PLEDIT.bottomRight
+      anchors.bottom: parent.bottom
+      anchors.right: parent.right
+    }
+
+    // ---- Contents, inside the frame ---------------------------------------
+    Rectangle {
+      id: content
+      x: root.frameLeft * root.zoom
+      y: root.frameTop * root.zoom
+      width: frame.width - (root.frameLeft + root.frameRight) * root.zoom
+      height: frame.height - (root.frameTop + root.frameBottom) * root.zoom
+      color: root.bgColor
+
+      Column {
+        anchors.fill: parent
+        anchors.margins: 2 * root.zoom
+
+        ListView {
+          id: list
+          width: parent.width
+          height: parent.height - entryRow.height - 2 * root.zoom
           clip: true
-          verticalAlignment: TextInput.AlignVCenter
-          onAccepted: { root.playInput(text); text = "" }
+          model: root.rows
+          boundsBehavior: Flickable.StopAtBounds
 
-          Text {
-            anchors.fill: parent
-            visible: !entry.text.length && !entry.activeFocus
-            text: "file path or stream URL…"
-            color: root.fgColor
-            opacity: 0.55
-            font: entry.font
-            verticalAlignment: Text.AlignVCenter
+          delegate: Rectangle {
+            required property var modelData
+            width: list.width
+            height: root.rowH
+            color: hover.containsMouse && modelData.kind === "track" ? root.selColor : "transparent"
+
+            readonly property bool isCurrent: modelData.kind === "track"
+              && root.nowTitle.length && modelData.title === root.nowTitle
+
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              x: modelData.kind === "header" ? 0 : 4 * root.zoom
+              text: modelData.label
+              color: modelData.kind === "header" ? root.selColor
+                   : (parent.isCurrent ? root.currentColor : root.fgColor)
+              font.family: root.fontName.length ? root.fontName : "monospace"
+              font.pixelSize: root.fontPx
+              font.bold: modelData.kind === "header" || parent.isCurrent
+              elide: Text.ElideRight
+              width: list.width - 8 * root.zoom
+            }
+
+            MouseArea {
+              id: hover
+              anchors.fill: parent
+              hoverEnabled: true
+              cursorShape: modelData.kind === "track" ? Qt.PointingHandCursor : Qt.ArrowCursor
+              onClicked: root.playRow(modelData)
+            }
+          }
+        }
+
+        // "Open": a path or URL, played immediately -- Winamp's Eject.
+        Row {
+          id: entryRow
+          width: parent.width
+          spacing: 2 * root.zoom
+
+          Rectangle {
+            width: parent.width - playBtn.width - parent.spacing
+            height: root.rowH + 2 * root.zoom
+            color: "transparent"
+            border.color: root.fgColor
+            border.width: 1
+
+            TextInput {
+              id: entry
+              anchors.fill: parent
+              anchors.margins: 2 * root.zoom
+              color: root.currentColor
+              font.family: root.fontName.length ? root.fontName : "monospace"
+              font.pixelSize: root.fontPx
+              clip: true
+              verticalAlignment: TextInput.AlignVCenter
+              onAccepted: { root.playInput(text); text = "" }
+
+              Text {
+                anchors.fill: parent
+                visible: !entry.text.length && !entry.activeFocus
+                text: "file path or stream URL…"
+                color: root.fgColor
+                opacity: 0.55
+                font: entry.font
+                verticalAlignment: Text.AlignVCenter
+              }
+            }
+          }
+
+          Rectangle {
+            id: playBtn
+            width: 40 * root.zoom
+            height: root.rowH + 2 * root.zoom
+            color: playArea.pressed ? root.selColor : "transparent"
+            border.color: root.fgColor
+            border.width: 1
+
+            Text {
+              anchors.centerIn: parent
+              text: "PLAY"
+              color: root.fgColor
+              font.family: root.fontName.length ? root.fontName : "monospace"
+              font.pixelSize: root.fontPx
+            }
+
+            MouseArea {
+              id: playArea
+              anchors.fill: parent
+              onClicked: { root.playInput(entry.text); entry.text = "" }
+            }
           }
         }
       }
 
-      Rectangle {
-        id: playBtn
-        width: 40 * root.zoom
-        height: root.rowH + 2 * root.zoom
-        color: playArea.pressed ? root.selColor : "transparent"
-        border.color: root.fgColor
-        border.width: 1
-
-        Text {
-          anchors.centerIn: parent
-          text: "PLAY"
-          color: root.fgColor
-          font.family: root.fontName.length ? root.fontName : "monospace"
-          font.pixelSize: root.fontPx
-        }
-
-        MouseArea {
-          id: playArea
-          anchors.fill: parent
-          onClicked: { root.playInput(entry.text); entry.text = "" }
-        }
+      Text {
+        anchors.bottom: parent.bottom
+        anchors.right: parent.right
+        anchors.margins: 2 * root.zoom
+        visible: root.status.length > 0
+        text: root.status
+        color: root.currentColor
+        font.pixelSize: root.fontPx * 0.9
       }
     }
   }
 
-  Text {
-    anchors.bottom: parent.bottom
-    anchors.right: parent.right
-    anchors.margins: 2 * root.zoom
-    visible: root.status.length > 0
-    text: root.status
-    color: root.currentColor
-    font.pixelSize: root.fontPx * 0.9
-  }
-
-  // The now-playing highlight tracks the engine even when changes come from
-  // elsewhere (the main window's transport, the bar widget, the CLI).
+  // Keeps the now-playing highlight honest when changes come from the main
+  // window's transport, the bar widget, or the CLI.
   Timer {
     running: root.visible
     interval: 3000

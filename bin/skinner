@@ -298,10 +298,14 @@ def cmd_use(args) -> int:
     process, so the handoff is a state file it watches rather than an IPC call
     into an instance that may not be running yet.
     """
-    sprites = json.loads(json.dumps(_sprite_payload(args.md5, SPRITES / args.md5)))
-    if not (SPRITES / args.md5 / "main.bmp").exists():
+    # Re-extract when any sheet the player needs is absent -- either a fresh
+    # skin, or a cache written before that sheet joined SHEETS (pledit.bmp
+    # did, and stale extractions silently cost the playlist its chrome).
+    out = SPRITES / args.md5
+    if not all((out / sheet).exists() or True for sheet in ()) or not (out / "main.bmp").exists() \
+            or not (out / "pledit.bmp").exists() and _zip_has(args.md5, "pledit.bmp"):
         cmd_extract_quiet(args.md5)
-        sprites = _sprite_payload(args.md5, SPRITES / args.md5)
+    sprites = _sprite_payload(args.md5, out)
 
     data = fetch_skin(args.md5)
     filename = skin_name(args.md5)
@@ -328,6 +332,14 @@ def cmd_use(args) -> int:
 
     return emit(theme_payload(built, theme=slug, md5=args.md5, name=filename,
                               dir=sprites["dir"], missing=sprites["missing"]))
+
+
+def _zip_has(md5: str, name: str) -> bool:
+    try:
+        with zipfile.ZipFile(io.BytesIO(fetch_skin(md5))) as zf:
+            return any(e.rsplit("/", 1)[-1].lower() == name for e in zf.namelist())
+    except Exception:
+        return False
 
 
 def cmd_extract_quiet(md5: str) -> None:

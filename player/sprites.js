@@ -203,3 +203,26 @@ function resample(bands, count) {
   }
   return out
 }
+
+// ---- Playlist editor frame (pledit.bmp) ----------------------------------
+// The classic pledit window chrome. Corners are fixed, tiles repeat to fill
+// whatever size the window is. Minimum width is 125+150: the two bottom
+// corner pieces meeting -- which is exactly the main window's 275.
+var PLEDIT = {
+  topLeft:          [  0,  0,  25, 20],
+  titleBar:         [ 26,  0, 100, 20],
+  topTile:          [127,  0,  25, 20],
+  topRight:         [153,  0,  25, 20],
+  // Inactive-window variants sit one row down.
+  topLeftIdle:      [  0, 21,  25, 20],
+  titleBarIdle:     [ 26, 21, 100, 20],
+  topTileIdle:      [127, 21,  25, 20],
+  topRightIdle:     [153, 21,  25, 20],
+  leftTile:         [  0, 42,  12, 29],
+  rightTile:        [ 32, 42,  20, 29],
+  bottomTile:       [179,  0,  25, 38],
+  bottomLeft:       [  0, 72, 125, 38],
+  bottomRight:      [126, 72, 150, 38],
+  // Close lives inside the top-right corner piece, like the main titlebar.
+  closeAt:          [11, 3, 9, 9]   // offset from the window's right edge
+}

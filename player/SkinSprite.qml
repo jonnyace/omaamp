@@ -38,4 +38,5 @@ Image {
   asynchronous: false
   // A skin missing an optional sheet should leave a hole, not an error icon.
   visible: status === Image.Ready
+  onStatusChanged: if (status === Image.Error) console.log("SkinSprite ERROR", sheet, JSON.stringify(rect), source)
 }
