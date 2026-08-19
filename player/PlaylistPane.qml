@@ -248,6 +248,18 @@ Item {
       dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
       rect: S.PLEDIT.bottomLeft
       anchors.bottom: parent.bottom
+
+      // ADD is the one button in this cluster with a real backing action:
+      // it focuses the paste bar, which is this build's add-URL/add-file.
+      // REM/SEL/MISC manage a queue cliamp's IPC cannot address, so they
+      // stay decorative rather than pretending.
+      MouseArea {
+        x: 9 * root.zoom
+        y: 8 * root.zoom
+        width: 28 * root.zoom
+        height: 26 * root.zoom
+        onClicked: entry.forceActiveFocus()
+      }
     }
 
     SkinSprite {
@@ -255,6 +267,16 @@ Item {
       rect: S.PLEDIT.bottomRight
       anchors.bottom: parent.bottom
       anchors.right: parent.right
+
+      MouseArea {
+        // LIST OPTS: reload playlists from disk, so a TOML dropped into
+        // ~/.config/cliamp/playlists/ shows up without reopening the pane.
+        x: 114 * root.zoom
+        y: 8 * root.zoom
+        width: 32 * root.zoom
+        height: 26 * root.zoom
+        onClicked: { root.status = "Playlists reloaded"; root.refresh() }
+      }
     }
 
     // ---- Contents, inside the frame ---------------------------------------

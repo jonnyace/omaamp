@@ -4,6 +4,11 @@ Winamp, on your Omarchy desktop, wearing any of the ~102,000 classic skins in
 the [Winamp Skin Museum](https://skins.webamp.org/) — driving whatever is
 actually playing.
 
+![OmaAmp wearing three museum skins](docs/hero.png)
+
+*Two museum skins with a live spectrum analyzer, and the docked playlist
+wearing the skin's own `pledit.bmp` chrome.*
+
 Two halves:
 
 - **The player** (`player/`) — the Winamp 2.x main window as a real floating
