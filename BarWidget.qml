@@ -14,7 +14,7 @@ import qs.Ui
 // popout-switch forwarding that lets clicking another bar icon hand over).
 BarWidget {
   id: root
-  moduleName: "io.github.jw.omaamp"
+  moduleName: "io.github.jonnyace.omaamp"
 
   // Resolved once and handed to the panel: the shell's working directory is
   // not the plugin directory, so every helper invocation needs an absolute

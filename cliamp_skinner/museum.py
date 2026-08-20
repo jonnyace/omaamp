@@ -15,7 +15,7 @@ import urllib.request
 from dataclasses import dataclass
 
 API = "https://api.webamp.org/graphql"
-USER_AGENT = "cliamp-skinner/0.1 (+https://github.com/omarchy-plugins)"
+USER_AGENT = "cliamp-skinner/0.1 (+https://github.com/jonnyace/omaamp)"
 
 _SKIN_FIELDS = "md5 filename nsfw download_url screenshot_url museum_url"
 

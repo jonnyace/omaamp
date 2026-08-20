@@ -71,10 +71,7 @@ echo "installed cliamp theme template + theme-set hook"
 # The title is ours, so rules match on class *and* title -- the same approach
 # Omarchy uses for its own Quickshell windows.
 if [[ -f $HYPR ]]; then
-  cp "$HYPR" "$HYPR.bak.$(date +%s)"
-  # Replace any previous block so rule changes ship with upgrades.
-  sed -i "/${MARK_BEGIN}/,/${MARK_END}/d" "$HYPR"
-  cat >>"$HYPR" <<EOF
+  block="$(cat <<EOF
 
 $MARK_BEGIN — no forced float: OmaAmp opens as its own tile like any app,
 -- so it never hovers over other windows uninvited. Toggle floating with the
@@ -86,7 +83,20 @@ o.window({ class = "^org.quickshell\$", title = "^OmaAmp.*\$" }, { rounding = 0 
 o.window({ class = "^org.quickshell\$", title = "^OmaAmp.*\$" }, { border_size = 0 })
 $MARK_END
 EOF
-  echo "refreshed Hyprland rules in $HYPR (backup alongside it)"
+)"
+  # Rebuild the file with the current block, then touch the real config only
+  # when it actually changed -- reinstalls stop minting hyprland.lua.bak
+  # copies of an identical file.
+  next="$(sed "/${MARK_BEGIN}/,/${MARK_END}/d" "$HYPR")"
+  # Strip the blank line the block carries so repeated runs stay stable.
+  next="${next%$'\n'}$block"
+  if [[ "$next" == "$(cat "$HYPR")" ]]; then
+    echo "Hyprland rules already current"
+  else
+    cp "$HYPR" "$HYPR.bak.$(date +%s)"
+    printf '%s\n' "$next" >"$HYPR"
+    echo "refreshed Hyprland rules in $HYPR (backup alongside it)"
+  fi
 else
   echo "note: $HYPR not found — add the float rule yourself if you want it undecorated" >&2
 fi

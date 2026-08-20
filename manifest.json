@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "io.github.jw.omaamp",
+  "id": "io.github.jonnyace.omaamp",
   "name": "OmaAmp",
   "version": "0.1.0",
-  "author": "jw",
+  "author": "jonnyace",
   "license": "MIT",
   "description": "Winamp on your desktop: browse 102,000 classic skins, dress the OmaAmp player and cliamp in any of them.",
   "kinds": [

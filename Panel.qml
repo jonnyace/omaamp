@@ -18,7 +18,7 @@ import "Model.js" as Model
 // whole desktop.
 Panel {
   id: root
-  moduleName: "io.github.jw.omaamp"
+  moduleName: "io.github.jonnyace.omaamp"
   ipcTarget: "omaamp"
   manageIpc: false
 
