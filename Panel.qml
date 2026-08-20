@@ -30,7 +30,7 @@ Panel {
   property string helper: ""
 
   property int tab: 0
-  readonly property var tabs: ["Browse", "Tune", "Mine"]
+  readonly property var tabs: ["Browse", "Tune", "My themes"]
 
   property var results: []
   property var themes: []
@@ -106,6 +106,13 @@ Panel {
 
   function applyTheme(name) { themeRun(["apply", name]) }
 
+  // Picking a theme wears it: the flat TUI player face plus the cliamp
+  // theme, in one action. Museum skins from Browse switch back to bitmaps.
+  function useTheme(name) {
+    status = "Wearing " + name + "…"
+    themeRun(["use-theme", name])
+  }
+
   function reapplyCurrent() {
     if (appliedTheme.length) applyTheme(appliedTheme)
   }
@@ -154,6 +161,15 @@ Panel {
     if (data.error) { status = data.error; return }
     if (data.removed) { status = data.removed + " removed"; refreshThemes(); return }
     if (data.applied) { appliedTheme = data.applied; status = "Using " + data.applied; return }
+    if (data.worn) {
+      appliedTheme = data.worn
+      status = "Wearing " + data.worn
+      colors = data.colors || ({})
+      pristineColors = JSON.parse(JSON.stringify(colors))
+      paletteName = data.worn
+      refreshThemes()
+      return
+    }
     if (data.md5 && !data.colors && !data.apply) {
       // `current` on open: remember the skin without disturbing the palette.
       currentMd5 = data.md5
@@ -543,6 +559,15 @@ Panel {
                 spacing: Style.spacing.controlGap
                 bottomPadding: Style.spacing.sm
 
+                Text {
+                  width: mineColumn.width
+                  text: "Picking a theme dresses the flat TUI player and cliamp together. Browse a skin for bitmap art instead."
+                  color: Util.alpha(Color.popups.text, 0.6)
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                  wrapMode: Text.WordWrap
+                }
+
                 Button {
                   id: syncButton
                   text: "Sync to Omarchy theme"
@@ -614,7 +639,7 @@ Panel {
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.applyTheme(modelData.name)
+                    onClicked: root.useTheme(modelData.name)
                   }
 
                   PanelActionButton {

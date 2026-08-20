@@ -22,6 +22,9 @@ Item {
   property bool shown: false
   // The hosting window's focus state, for the active/idle title-bar art.
   property bool windowActive: true
+  // Set to the seven theme colors when the player wears the flat TUI face:
+  // the pledit bitmaps hide and the pane draws its own chrome to match.
+  property var tui: null
 
   // ---- pledit.txt colours ------------------------------------------------
   property color bgColor: "#000000"
@@ -38,7 +41,18 @@ Item {
     onFileChanged: reload()
   }
 
+  onTuiChanged: {
+    if (tui) {
+      bgColor = tui.bg || "#101010"
+      fgColor = tui.fg || "#707880"
+      currentColor = tui.bright_fg || "#e0e0e0"
+      selColor = tui.accent || "#446644"
+      fontName = "monospace"
+    }
+  }
+
   function applyPledit(text) {
+    if (tui) return  // theme colors own the pane in TUI mode
     var keys = {}
     var lines = String(text || "").split("\n")
     for (var i = 0; i < lines.length; i++) {
@@ -132,19 +146,48 @@ Item {
   readonly property real fontPx: 8 * zoom
   readonly property int rowH: 11 * zoom
 
-  // Frame thicknesses, in skin pixels.
-  readonly property int frameTop: 20
-  readonly property int frameBottom: 38
-  readonly property int frameLeft: 12
-  readonly property int frameRight: 20
+  // Frame thicknesses, in skin pixels. The flat face needs far less chrome
+  // than the bitmap frame's button clusters.
+  readonly property int frameTop: tui ? 13 : 20
+  readonly property int frameBottom: tui ? 4 : 38
+  readonly property int frameLeft: tui ? 4 : 12
+  readonly property int frameRight: tui ? 4 : 20
 
   Item {
     id: frame
     anchors.fill: parent
 
+    // Flat chrome for TUI mode: border + title strip in theme colors.
+    Rectangle {
+      anchors.fill: parent
+      visible: !!root.tui
+      color: root.bgColor
+      border.width: 1
+      border.color: Qt.alpha(root.fgColor, 0.45)
+    }
+
+    Rectangle {
+      visible: !!root.tui
+      x: 1; y: 1
+      width: parent.width - 2
+      height: root.frameTop * root.zoom - 1
+      color: Qt.alpha(root.selColor, 0.3)
+
+      Text {
+        anchors.centerIn: parent
+        text: "PLAYLIST"
+        color: root.currentColor
+        font.family: "monospace"
+        font.pixelSize: 6 * root.zoom
+        font.bold: true
+      }
+    }
+
     // ---- Top row: corner, tiles, centred title, corner -------------------
+    // (all bitmap chrome hides in TUI mode; the flat strip below takes over)
     SkinSprite {
       id: topLeft
+      visible: !root.tui
       dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
       rect: root.windowActive ? S.PLEDIT.topLeft : S.PLEDIT.topLeftIdle
     }
@@ -160,6 +203,7 @@ Item {
         model: Math.max(0, Math.ceil((frame.width - 50 * root.zoom) / (25 * root.zoom)))
 
         SkinSprite {
+          visible: !root.tui
           dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
           rect: root.windowActive ? S.PLEDIT.topTile : S.PLEDIT.topTileIdle
         }
@@ -167,6 +211,7 @@ Item {
     }
 
     SkinSprite {
+      visible: !root.tui
       dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
       rect: root.windowActive ? S.PLEDIT.titleBar : S.PLEDIT.titleBarIdle
       anchors.horizontalCenter: parent.horizontalCenter
@@ -174,6 +219,7 @@ Item {
 
     SkinSprite {
       id: topRight
+      visible: !root.tui
       dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
       rect: root.windowActive ? S.PLEDIT.topRight : S.PLEDIT.topRightIdle
       anchors.right: parent.right
@@ -204,6 +250,7 @@ Item {
         model: Math.max(0, Math.ceil(frame.height / (29 * root.zoom)))
 
         SkinSprite {
+          visible: !root.tui
           dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
           rect: S.PLEDIT.leftTile
         }
@@ -220,6 +267,7 @@ Item {
         model: Math.max(0, Math.ceil(frame.height / (29 * root.zoom)))
 
         SkinSprite {
+          visible: !root.tui
           dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
           rect: S.PLEDIT.rightTile
         }
@@ -238,6 +286,7 @@ Item {
         model: Math.max(0, Math.ceil(frame.width / (25 * root.zoom)))
 
         SkinSprite {
+          visible: !root.tui
           dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
           rect: S.PLEDIT.bottomTile
         }
@@ -245,6 +294,7 @@ Item {
     }
 
     SkinSprite {
+      visible: !root.tui
       dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
       rect: S.PLEDIT.bottomLeft
       anchors.bottom: parent.bottom
@@ -263,6 +313,7 @@ Item {
     }
 
     SkinSprite {
+      visible: !root.tui
       dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
       rect: S.PLEDIT.bottomRight
       anchors.bottom: parent.bottom

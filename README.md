@@ -61,20 +61,26 @@ museum entries flagged NSFW are filtered from browse and search.
   focuses the player.
 - **Browser panel**: *Browse* is the museum's own top ranking (cached,
   offline); typing searches everything. Clicking a skin re-dresses a running
-  player live. *Tune* edits the seven derived cliamp colors and holds the
-  **Make Omarchy theme** / **Apply to desktop** buttons. *Mine* lists
-  installed themes.
+  player live. *Tune* edits the seven derived cliamp colors — live, when the
+  player wears the TUI face — and holds the **Make Omarchy theme** /
+  **Apply to desktop** buttons. *My themes* lists installed cliamp themes;
+  picking one dresses the TUI player and cliamp together.
 - **Player**: opens as its own tile (never hovering over your windows),
   scales in whole-pixel steps up to Winamp's classic double-size, floats
   when you toggle it. The letterbox is transparent — wallpaper shows through
   around the artwork.
 - **Following your Omarchy theme**: museum skins are bitmap art — they keep
   their own colors and do **not** recolor when you switch Omarchy themes.
-  If you want a player that matches your desktop, hit **Sync to Omarchy
-  theme** in the *Mine* tab (or run `skinner sync`): it generates a synthetic
-  skin — the classic Winamp layout recolored through your live palette — and
-  the theme-set hook rebuilds it on every `omarchy theme set` while it's
-  worn. Pick any museum skin to go back to fixed art.
+  Two ways to get a player that matches your desktop:
+  - **My themes** tab: pick any cliamp theme and the player wears the flat
+    **TUI face** — the same layout drawn from the theme's seven colors,
+    deliberately close to cliamp's own look. Because it is color-driven,
+    the *Tune* tab recolors it live, and it is the default face for themes.
+  - **Sync to Omarchy theme**: generates a synthetic bitmap skin — the
+    classic Winamp art recolored through your live palette — rebuilt by the
+    theme-set hook on every `omarchy theme set` while worn.
+
+  Pick any museum skin in *Browse* to go back to fixed bitmap art.
 
 ```bash
 omaamp                  # launch, or focus the running instance

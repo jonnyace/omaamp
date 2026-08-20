@@ -226,3 +226,26 @@ var PLEDIT = {
   // Close lives inside the top-right corner piece, like the main titlebar.
   closeAt:          [11, 3, 9, 9]   // offset from the window's right edge
 }
+
+// ---- TUI face helpers -----------------------------------------------------
+
+function mixHex(a, b, t) {
+  function ch(h, i) { return parseInt(h.substr(1 + i * 2, 2), 16) }
+  var out = "#"
+  for (var i = 0; i < 3; i++) {
+    var v = Math.round(ch(a, i) + (ch(b, i) - ch(a, i)) * t)
+    out += (v < 16 ? "0" : "") + v.toString(16)
+  }
+  return out
+}
+
+// 16 analyzer row colors, top-first, from a theme's own signal colors --
+// the classic red / yellow / green semantics, flat.
+function tuiVisRamp(red, yellow, green) {
+  var out = []
+  for (var i = 0; i < 16; i++) {
+    var t = i / 15
+    out.push(t < 0.5 ? mixHex(red, yellow, t * 2) : mixHex(yellow, green, (t - 0.5) * 2))
+  }
+  return out
+}

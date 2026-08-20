@@ -54,11 +54,32 @@ FloatingWindow {
   function applyState(raw) {
     var state
     try { state = JSON.parse(String(raw)) } catch (e) { return }
-    if (!state || !state.dir) return
+    if (!state) return
+    if (state.mode === "tui" && state.colors) {
+      tuiMode = true
+      tuiColors = state.colors
+      skinName = String(state.name || "theme")
+      skinDir = ""
+      return
+    }
+    if (!state.dir) return
+    tuiMode = false
     skinDir = state.dir
     skinName = String(state.name || "")
     extendedDigits = state.extendedDigits === true
   }
+
+  // The flat face: drawn from the seven cliamp theme colors instead of
+  // bitmaps, so "My themes" picks and Tune edits recolor the player live.
+  property bool tuiMode: false
+  property var tuiColors: ({})
+  readonly property color tBg: tuiColors.bg || "#101010"
+  readonly property color tFg: tuiColors.fg || "#707880"
+  readonly property color tHi: tuiColors.bright_fg || "#e0e0e0"
+  readonly property color tAcc: tuiColors.accent || "#8fbcbb"
+  readonly property var tRamp: tuiMode
+    ? S.tuiVisRamp(tuiColors.red || "#dc322f", tuiColors.yellow || "#b58900", tuiColors.green || "#859900")
+    : []
 
   // ---- Player selection -------------------------------------------------
 
@@ -229,6 +250,7 @@ FloatingWindow {
     spacing: 0
 
     Item {
+    visible: !root.tuiMode
     width: S.MAIN_WIDTH * root.zoom
     height: S.MAIN_HEIGHT * root.zoom
 
@@ -544,12 +566,246 @@ FloatingWindow {
     }
     }
 
+    // ------------------------------------------------------------------
+    // The TUI face. Same 275x116 footprint and the same wiring as the
+    // sprite skin -- transport, seek, marquee, analyzer, PL -- but drawn
+    // flat from theme colors, deliberately close to cliamp's own look.
+    Item {
+      visible: root.tuiMode
+      width: S.MAIN_WIDTH * root.zoom
+      height: S.MAIN_HEIGHT * root.zoom
+
+      Rectangle {
+        anchors.fill: parent
+        color: root.tBg
+        border.width: Math.max(1, root.zoom)
+        border.color: Qt.alpha(root.tFg, 0.45)
+      }
+
+      // Title strip: drag surface, name, close.
+      Rectangle {
+        id: tuiTitle
+        x: root.zoom; y: root.zoom
+        width: parent.width - 2 * root.zoom
+        height: 11 * root.zoom
+        color: Qt.alpha(root.tAcc, 0.22)
+
+        Text {
+          anchors.centerIn: parent
+          text: "OMAAMP — " + root.skinName.toUpperCase()
+          color: root.tHi
+          font.family: "monospace"
+          font.pixelSize: 6 * root.zoom
+          font.bold: true
+        }
+
+        Text {
+          anchors.right: parent.right
+          anchors.rightMargin: 4 * root.zoom
+          anchors.verticalCenter: parent.verticalCenter
+          text: "✕"
+          color: closeArea.containsMouse ? root.tHi : root.tFg
+          font.pixelSize: 7 * root.zoom
+
+          MouseArea {
+            id: closeArea
+            anchors.fill: parent
+            anchors.margins: -3 * root.zoom
+            hoverEnabled: true
+            onClicked: root.visible = false
+          }
+        }
+
+        MouseArea {
+          anchors.fill: parent
+          anchors.rightMargin: 16 * root.zoom
+          onPressed: if (root.Window.window) root.Window.window.startSystemMove()
+        }
+      }
+
+      // Time + play state.
+      Text {
+        x: 12 * root.zoom; y: 20 * root.zoom
+        text: (root.playing ? "▶ " : "⏸ ")
+          + root.clock[0] + root.clock[1] + ":" + root.clock[2] + root.clock[3]
+        color: root.tHi
+        font.family: "monospace"
+        font.pixelSize: 17 * root.zoom
+        font.bold: true
+      }
+
+      // Marquee.
+      Text {
+        x: 108 * root.zoom; y: 25 * root.zoom
+        width: 156 * root.zoom
+        text: root.marqueeText
+        color: root.tAcc
+        font.family: "monospace"
+        font.pixelSize: 7 * root.zoom
+        clip: true
+        elide: Text.ElideNone
+      }
+
+      // Analyzer well: same bars, flat ramp from the theme's red/yellow/green.
+      Row {
+        x: 12 * root.zoom; y: 48 * root.zoom
+        spacing: S.VIS_BAR_GAP * root.zoom
+        visible: root.bands.length > 0
+
+        Repeater {
+          model: S.resample(root.bands, S.visBarCount())
+
+          Column {
+            required property real modelData
+            spacing: 0
+            readonly property int lit: Math.round(Math.max(0, Math.min(1, modelData)) * S.VIS_ROWS)
+
+            Repeater {
+              model: S.VIS_ROWS
+
+              Rectangle {
+                required property int index
+                width: S.VIS_BAR_WIDTH * root.zoom
+                height: root.zoom
+                color: index < S.VIS_ROWS - parent.lit ? "transparent"
+                     : (root.tRamp.length > index ? root.tRamp[index] : root.tAcc)
+              }
+            }
+          }
+        }
+      }
+
+      // Volume, flat.
+      Rectangle {
+        x: 108 * root.zoom; y: 52 * root.zoom
+        width: 68 * root.zoom; height: 4 * root.zoom
+        color: Qt.alpha(root.tFg, 0.25)
+
+        Rectangle {
+          width: parent.width * root.volumeLevel
+          height: parent.height
+          color: root.tAcc
+        }
+
+        MouseArea {
+          anchors.fill: parent
+          anchors.margins: -3 * root.zoom
+          onPressed: function(m) { if (root.player) root.player.volume = Math.max(0, Math.min(1, m.x / width)) }
+          onPositionChanged: function(m) { if (pressed && root.player) root.player.volume = Math.max(0, Math.min(1, m.x / width)) }
+        }
+      }
+
+      // Shuffle / repeat readouts.
+      Text {
+        x: 200 * root.zoom; y: 49 * root.zoom
+        text: "SHUF " + (root.player && root.player.shuffle ? "●" : "○")
+          + "  REP " + (root.player && root.player.loopState !== MprisLoopState.None ? "●" : "○")
+        color: root.tFg
+        font.family: "monospace"
+        font.pixelSize: 6 * root.zoom
+
+        MouseArea {
+          anchors.fill: parent
+          onClicked: function(m) {
+            if (m.x < width / 2) {
+              if (root.player && root.player.shuffleSupported) root.player.shuffle = !root.player.shuffle
+            } else root.cycleLoop()
+          }
+        }
+      }
+
+      // Seek bar.
+      Rectangle {
+        x: 12 * root.zoom; y: 74 * root.zoom
+        width: 251 * root.zoom; height: 5 * root.zoom
+        visible: root.duration > 0
+        color: Qt.alpha(root.tFg, 0.25)
+
+        Rectangle {
+          width: parent.width * root.progress
+          height: parent.height
+          color: root.tHi
+        }
+
+        MouseArea {
+          anchors.fill: parent
+          anchors.margins: -4 * root.zoom
+          onPressed: function(m) { root.seeking = true; root.seekFraction = Math.max(0, Math.min(1, m.x / width)) }
+          onPositionChanged: function(m) { if (pressed) root.seekFraction = Math.max(0, Math.min(1, m.x / width)) }
+          onReleased: root.commitSeek()
+          onCanceled: root.seeking = false
+        }
+      }
+
+      // Transport row.
+      Row {
+        x: 12 * root.zoom; y: 88 * root.zoom
+        spacing: 6 * root.zoom
+
+        Repeater {
+          model: [
+            { glyph: "󰒮", action: "previous" },
+            { glyph: "󰐊", action: "play" },
+            { glyph: "󰏤", action: "pause" },
+            { glyph: "󰓛", action: "stop" },
+            { glyph: "󰒭", action: "next" }
+          ]
+
+          Rectangle {
+            required property var modelData
+            width: 22 * root.zoom
+            height: 18 * root.zoom
+            color: tArea.containsMouse ? Qt.alpha(root.tAcc, 0.25) : Qt.alpha(root.tFg, 0.1)
+            border.width: 1
+            border.color: Qt.alpha(root.tFg, 0.4)
+
+            Text {
+              anchors.centerIn: parent
+              text: modelData.glyph
+              color: tArea.containsMouse ? root.tHi : root.tFg
+              font.pixelSize: 9 * root.zoom
+            }
+
+            MouseArea {
+              id: tArea
+              anchors.fill: parent
+              hoverEnabled: true
+              onClicked: root.transport(modelData.action)
+            }
+          }
+        }
+
+        Rectangle {
+          width: 30 * root.zoom
+          height: 18 * root.zoom
+          color: playlist_.shown ? Qt.alpha(root.tAcc, 0.35) : Qt.alpha(root.tFg, 0.1)
+          border.width: 1
+          border.color: Qt.alpha(root.tFg, 0.4)
+
+          Text {
+            anchors.centerIn: parent
+            text: "PL"
+            color: playlist_.shown ? root.tHi : root.tFg
+            font.family: "monospace"
+            font.pixelSize: 8 * root.zoom
+            font.bold: true
+          }
+
+          MouseArea {
+            anchors.fill: parent
+            onClicked: root.togglePlaylist()
+          }
+        }
+      }
+    }
+
     PlaylistPane {
       id: playlist_
       skinDir: root.skinDir
       helper: Quickshell.env("OMAAMP_HELPER") || ""
       zoom: root.zoom
       windowActive: root.active === true
+      tui: root.tuiMode ? root.tuiColors : null
       width: S.MAIN_WIDTH * root.zoom
       // In a tile, fill whatever space remains under the main window; when
       // floating there is exactly the classic one-main-height pane, because

@@ -524,6 +524,61 @@ def cmd_play_track(args) -> int:
     return emit({"error": f"no playlist named {args.playlist}"})
 
 
+BUILTIN_THEMES_URL = (
+    "https://raw.githubusercontent.com/bjarneo/cliamp/main/theme/themes/{}.toml"
+)
+
+
+def builtin_theme_colors(slug: str) -> dict:
+    """Fetch a built-in cliamp theme's colors, cached after first use.
+
+    The binary embeds its themes without names attached, so the source repo
+    is the only reliable place to read a built-in's palette from.
+    """
+    cache = CACHE / "builtin-themes"
+    cache.mkdir(parents=True, exist_ok=True)
+    path = cache / f"{slug}.toml"
+    if not path.exists():
+        try:
+            path.write_bytes(museum._request(BUILTIN_THEMES_URL.format(slug)))
+        except Exception:
+            return {}
+    return read_theme(path)
+
+
+def cmd_use_theme(args) -> int:
+    """Dress the player in a cliamp theme, as the flat TUI face.
+
+    The TUI face is vector-drawn from the same seven colors cliamp reads,
+    which is what makes the theme list and the Tune tab live controls for
+    the player rather than cliamp-only settings.
+    """
+    slug = slugify(args.name)
+    colors = read_theme(THEMES / f"{slug}.toml") if (THEMES / f"{slug}.toml").exists() else {}
+    if not colors:
+        colors = builtin_theme_colors(slug)
+    missing = [k for k in SLOTS if k not in colors]
+    if missing and "bg" in missing and len(missing) == 1:
+        # cliamp documents bg as optional; the face still needs one.
+        colors["bg"] = "#101010"
+        missing = []
+    if missing:
+        return emit({"error": f"theme {slug} is missing {', '.join(missing)}"})
+
+    STATE.mkdir(parents=True, exist_ok=True)
+    CURRENT.write_text(json.dumps({
+        "mode": "tui",
+        "md5": "",
+        "dir": "",
+        "name": slug,
+        "theme": slug,
+        "extendedDigits": False,
+        "colors": colors,
+    }, indent=1))
+    subprocess.run(["cliamp", "theme", slug], capture_output=True, text=True, timeout=15)
+    return emit({"worn": slug, "mode": "tui", "colors": colors})
+
+
 def cmd_current(args) -> int:
     try:
         return emit(json.loads(CURRENT.read_text()))
@@ -592,6 +647,16 @@ def cmd_save(args) -> int:
 
     THEMES.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(f'{s} = "{colors[s]}"' for s in SLOTS) + "\n")
+
+    # A TUI-mode player wearing this theme recolors on the spot.
+    try:
+        state = json.loads(CURRENT.read_text())
+        if state.get("mode") == "tui" and state.get("theme") == slug:
+            state["colors"] = colors
+            CURRENT.write_text(json.dumps(state, indent=1))
+    except (OSError, ValueError):
+        pass
+    subprocess.run(["cliamp", "theme", slug], capture_output=True, text=True, timeout=15)
     return emit({"theme": slug, "colors": colors})
 
 
@@ -715,6 +780,10 @@ def main() -> int:
     p.set_defaults(fn=cmd_use)
 
     sub.add_parser("current").set_defaults(fn=cmd_current)
+
+    p = sub.add_parser("use-theme", help="wear a cliamp theme as the flat TUI face")
+    p.add_argument("name")
+    p.set_defaults(fn=cmd_use_theme)
 
     p = sub.add_parser("make-theme", help="build a full Omarchy theme from a skin")
     p.add_argument("md5")
