@@ -81,10 +81,9 @@ BarWidget {
     id: button
     anchors.fill: parent
     bar: root.bar
-    // Palette glyph: this is a theme picker that happens to source its
-    // palettes from Winamp, and a music note would collide with the media
-    // widgets already in the bar.
-    text: "󰸌"
+    // The same music-note glyph Omarchy's own media widget uses, so it is
+    // guaranteed present in the bar font and reads as "music" at a glance.
+    text: "󰝚"
     tooltipText: "OmaAmp — Winamp skins"
 
     onPressed: function(b) {
