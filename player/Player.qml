@@ -25,14 +25,20 @@ FloatingWindow {
   // -- a tiled OmaAmp fills its tile at 2x or 3x instead of rattling around
   // at launch size or smearing at a fractional one.
   property int baseZoom: 2
-  // Fit the tile, but never past double the physically-correct size: real
-  // Winamp had exactly normal and double-size, and letting a large tile
-  // push the art to 4x logical (8x physical on a HiDPI panel) reads as a
-  // rendering mistake, not a big player.
-  readonly property int zoom: Math.max(1, Math.min(
-    baseZoom * 2,
-    Math.floor(width / S.MAIN_WIDTH),
-    Math.floor(height / S.MAIN_HEIGHT)))
+  // Zoom is chosen in PHYSICAL pixels, not logical ones: on a scale-2 panel
+  // a logical zoom of 1.5 is exactly 3 hardware pixels per skin pixel --
+  // still perfectly crisp nearest-neighbour -- while whole-logical steps
+  // could only offer 2 or 4. Fit the tile in physical units, cap at 1.5x
+  // the launch size (whole-logical stepping made the only next size up 2x,
+  // which read as chunky rather than big), and convert back.
+  readonly property real dpr: devicePixelRatio > 0 ? devicePixelRatio : 1
+  readonly property real zoom: {
+    var fitPhys = Math.floor(Math.min(
+      width * dpr / S.MAIN_WIDTH,
+      height * dpr / S.MAIN_HEIGHT))
+    var capPhys = Math.max(1, Math.round(baseZoom * dpr * 1.5))
+    return Math.max(1, Math.min(capPhys, fitPhys)) / dpr
+  }
 
   // The bar plugin and this app are separate processes; the plugin writes
   // ~/.local/state/omaamp/current.json and this watcher hot-swaps the skin,

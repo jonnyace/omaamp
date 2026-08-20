@@ -18,7 +18,7 @@ Image {
   property string sheet: ""
   // [x, y, w, h] in unscaled skin pixels.
   property var rect: [0, 0, 0, 0]
-  property int zoom: 2
+  property real zoom: 2
 
   readonly property int cellWidth: rect && rect.length === 4 ? rect[2] : 0
   readonly property int cellHeight: rect && rect.length === 4 ? rect[3] : 0

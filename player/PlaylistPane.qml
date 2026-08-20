@@ -17,7 +17,7 @@ Item {
 
   property string skinDir: ""
   property string helper: ""
-  property int zoom: 2
+  property real zoom: 2
   // Owned by the PL button in Player.qml; the pledit close box clears it.
   property bool shown: false
   // The hosting window's focus state, for the active/idle title-bar art.
