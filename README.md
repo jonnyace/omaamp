@@ -102,8 +102,8 @@ borrow the ramp's hue instead of surfacing grey, and polychrome ramps —
 including Winamp's own red/yellow/green — are left alone, because their
 non-monotonic lightness *is* the look. On 200 randomly sampled skins the
 result is 98.5% clean; the residual is two-color skins where "collapsed" is
-the honest answer. `python3 -m unittest test_convert` runs the regression
-suite; `bench.py` re-runs the corpus harness.
+the honest answer. `python3 -m unittest discover -s tools` runs the
+regression suite; `tools/bench.py` re-runs the corpus harness.
 
 **Museum API.** `https://api.webamp.org/graphql`, public and unauthenticated.
 `sort: MUSEUM` is the site's own curated ranking. Files and screenshots come
@@ -120,6 +120,7 @@ send a real one.
     cliamp_skinner/    the OKLab conversion engine (stdlib-only Python)
     install.sh         desktop-app install / uninstall
     assets/            cliamp theme template + theme-set hook
+    tools/             dev tooling: corpus bench, CLI converter, tests
 
 ## License
 

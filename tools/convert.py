@@ -9,7 +9,12 @@ With no -o, themes are written to ~/.config/cliamp/themes/ and are immediately
 selectable with `cliamp theme <name>` or the in-player picker (press `t`).
 """
 
+
 from __future__ import annotations
+
+import sys
+from pathlib import Path as _P
+sys.path.insert(0, str(_P(__file__).resolve().parent.parent))  # repo root, for cliamp_skinner
 
 import argparse
 import re

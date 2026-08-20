@@ -7,7 +7,12 @@ museum, so they are kept as regressions rather than as illustrations.
     python3 -m unittest test_convert -v
 """
 
+
 from __future__ import annotations
+
+import sys
+from pathlib import Path as _P
+sys.path.insert(0, str(_P(__file__).resolve().parent.parent))  # repo root, for cliamp_skinner
 
 import io
 import unittest

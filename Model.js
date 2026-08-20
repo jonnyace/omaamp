@@ -69,3 +69,21 @@ function wrap(index, length) {
   if (length <= 0) return 0
   return ((index % length) + length) % length
 }
+
+// Nudge a hex color lighter (positive) or darker (negative) by mixing toward
+// white or black in sRGB. Crude next to the Python engine's OKLab math, but
+// for ±8% interactive nudges the difference is imperceptible and it keeps
+// the panel synchronous.
+function nudge(hex, amount) {
+  if (!isHex(hex)) return hex
+  var h = String(hex).replace("#", "")
+  var target = amount > 0 ? 255 : 0
+  var t = Math.min(1, Math.abs(amount))
+  var out = "#"
+  for (var i = 0; i < 3; i++) {
+    var c = parseInt(h.substr(i * 2, 2), 16)
+    c = Math.round(c + (target - c) * t)
+    out += (c < 16 ? "0" : "") + c.toString(16)
+  }
+  return out
+}

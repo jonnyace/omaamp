@@ -14,7 +14,12 @@ Grades check the properties the mapping is supposed to guarantee:
   * the theme doesn't collapse into near-identical colors
 """
 
+
 from __future__ import annotations
+
+import sys
+from pathlib import Path as _P
+sys.path.insert(0, str(_P(__file__).resolve().parent.parent))  # repo root, for cliamp_skinner
 
 import argparse
 import concurrent.futures as futures
@@ -42,7 +47,7 @@ from cliamp_skinner.theme import (
     SPECTRUM_STEP,
 )
 
-CACHE = Path(__file__).parent / ".cache"
+CACHE = Path(__file__).resolve().parent.parent / ".cache"
 TARGETS = {
     "bright_fg": TARGET_BRIGHT_FG,
     "fg": TARGET_FG,

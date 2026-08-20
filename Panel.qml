@@ -37,6 +37,9 @@ Panel {
   // Named `colors`, not `palette`: QQuickItem already has a `palette`
   // property, and shadowing it is a silent trap.
   property var colors: ({})
+  // Snapshot taken when a palette loads, so Reset can walk back edits that
+  // have not been saved yet.
+  property var pristineColors: ({})
   property string paletteName: ""
   property string appliedTheme: ""
   property string currentMd5: ""
@@ -166,6 +169,7 @@ Panel {
     }
     if (data.theme) {
       colors = data.colors || ({})
+      pristineColors = JSON.parse(JSON.stringify(colors))
       paletteName = data.theme
       if (data.md5) currentMd5 = data.md5
       omarchyTheme = ""
@@ -392,6 +396,26 @@ Panel {
                 text: root.paletteName.length ? root.paletteName : "No theme loaded"
               }
 
+              // The whole palette at a glance; edits show here immediately,
+              // before anything is saved.
+              Row {
+                visible: root.paletteName.length > 0
+                spacing: 0
+
+                Repeater {
+                  model: Model.SLOTS
+
+                  Rectangle {
+                    required property string modelData
+                    width: Style.space(34)
+                    height: Style.space(18)
+                    color: root.colors[modelData] || "transparent"
+                    border.width: 1
+                    border.color: Util.alpha(Color.popups.text, 0.2)
+                  }
+                }
+              }
+
               Text {
                 width: parent.width
                 visible: !root.paletteName.length
@@ -431,9 +455,25 @@ Panel {
                   TextField {
                     width: Style.space(110)
                     text: root.colors[modelData] || ""
+                    // Urgent text the moment the field stops being a color,
+                    // instead of silently ignoring the edit on commit.
+                    foreground: text.length === 0 || Model.isHex(text)
+                      ? Color.popups.text : Color.urgent
                     onActiveFocusChanged: root.editingHex = activeFocus
                     onAccepted: root.setSlot(modelData, text)
                     onEditingFinished: root.setSlot(modelData, text)
+                  }
+
+                  PanelActionButton {
+                    iconText: "−"
+                    tooltipText: "Darker"
+                    onClicked: root.setSlot(modelData, Model.nudge(root.colors[modelData], -0.08))
+                  }
+
+                  PanelActionButton {
+                    iconText: "+"
+                    tooltipText: "Lighter"
+                    onClicked: root.setSlot(modelData, Model.nudge(root.colors[modelData], 0.08))
                   }
 
                   Text {
@@ -455,6 +495,13 @@ Panel {
                   text: "Save and apply"
                   bordered: true
                   onClicked: root.savePalette()
+                }
+
+                Button {
+                  text: "Reset"
+                  bordered: true
+                  tooltipText: "Back to the palette as last saved"
+                  onClicked: root.colors = JSON.parse(JSON.stringify(root.pristineColors))
                 }
 
                 // The deep end: colors.toml + a rendered wallpaper under
