@@ -691,34 +691,21 @@ def read_theme_colors() -> dict:
 
 
 def cmd_sync(args) -> int:
-    """Dress everything in the current Omarchy theme.
+    """Dress everything in the current Omarchy theme, as the TUI face.
 
-    Museum skins are bitmap art and cannot follow `omarchy theme set`, so
-    sync builds a synthetic skin instead: the classic base-2.91 sheets
-    recolored through the live palette. It also writes the matching cliamp
-    theme, and the theme-set hook re-runs this on every switch while the
-    synthetic skin is worn -- the one skin that changes color with the rest
-    of the desktop.
+    Writes the cliamp theme derived from the live colors.toml and wears it
+    on the flat TUI face -- the same seven values cliamp reads, so player
+    and terminal match exactly. The theme-set hook re-runs this on every
+    `omarchy theme set` while it is worn, which is what makes this the one
+    look that recolors with the rest of the desktop.
+
+    (cliamp_skinner.theme_skin can still render the palette as a recolored
+    bitmap skin, but sync deliberately stopped using it: landing on bitmap
+    art from a "sync to theme" button read as a mode switch, not a sync.)
     """
-    from cliamp_skinner import theme_skin
-
     values = read_theme_colors()
     if not values:
         return emit({"error": "no current Omarchy theme colors found"})
-
-    # The recolor source: base-2.91, fetched/extracted like any other skin.
-    if not (SPRITES / BASE_SKIN_MD5 / "main.bmp").exists():
-        cmd_extract_quiet(BASE_SKIN_MD5)
-    skin_dir = theme_skin.build(SPRITES / BASE_SKIN_MD5, values, SPRITES)
-
-    STATE.mkdir(parents=True, exist_ok=True)
-    CURRENT.write_text(json.dumps({
-        "md5": "omarchy",
-        "dir": str(skin_dir),
-        "name": "Omarchy",
-        "extendedDigits": False,
-        "theme": "omarchy",
-    }, indent=1))
 
     def pick(*keys, fallback):
         for k in keys:
@@ -744,8 +731,19 @@ def cmd_sync(args) -> int:
     index = read_index()
     index["omarchy"] = {"md5": "", "source": "Omarchy theme"}
     write_index(index)
+
+    STATE.mkdir(parents=True, exist_ok=True)
+    CURRENT.write_text(json.dumps({
+        "mode": "tui",
+        "md5": "",
+        "dir": "",
+        "name": "omarchy",
+        "theme": "omarchy",
+        "extendedDigits": False,
+        "colors": colors,
+    }, indent=1))
     subprocess.run(["cliamp", "theme", "omarchy"], capture_output=True, text=True, timeout=15)
-    return emit({"theme": "omarchy", "skin": str(skin_dir), "colors": colors})
+    return emit({"worn": "omarchy", "mode": "tui", "theme": "omarchy", "colors": colors})
 
 
 def main() -> int:
