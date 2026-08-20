@@ -68,6 +68,13 @@ museum entries flagged NSFW are filtered from browse and search.
   scales in whole-pixel steps up to Winamp's classic double-size, floats
   when you toggle it. The letterbox is transparent — wallpaper shows through
   around the artwork.
+- **Following your Omarchy theme**: museum skins are bitmap art — they keep
+  their own colors and do **not** recolor when you switch Omarchy themes.
+  If you want a player that matches your desktop, hit **Sync to Omarchy
+  theme** in the *Mine* tab (or run `skinner sync`): it generates a synthetic
+  skin — the classic Winamp layout recolored through your live palette — and
+  the theme-set hook rebuilds it on every `omarchy theme set` while it's
+  worn. Pick any museum skin to go back to fixed art.
 
 ```bash
 omaamp                  # launch, or focus the running instance

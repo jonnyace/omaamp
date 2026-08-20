@@ -167,9 +167,9 @@ def write_colors_toml(path: Path, colors: dict[str, str], source: str) -> None:
 def decode_bmp(raw: bytes) -> tuple[int, int, list[bytes]] | None:
     """Decode an uncompressed 8/24/32-bit BMP into top-down RGB rows.
 
-    Covers ~95% of skin sheets (the survey in the README); anything else --
-    RLE, bitfields, corrupt headers -- returns None and the wallpaper falls
-    back to a plain gradient rather than failing the theme.
+    Covers uncompressed 8/24/32-bit plus RLE8 -- together ~99% of skin
+    sheets (base-2.91 itself is RLE8 throughout). Anything else -- RLE4,
+    bitfields, corrupt headers -- returns None and callers fall back.
     """
     if len(raw) < 54 or raw[:2] != b"BM":
         return None
@@ -181,7 +181,9 @@ def decode_bmp(raw: bytes) -> tuple[int, int, list[bytes]] | None:
         compression = struct.unpack_from("<I", raw, 30)[0]
     except struct.error:
         return None
-    if compression != 0 or bpp not in (8, 24, 32) or width <= 0 or height == 0:
+    if width <= 0 or height == 0:
+        return None
+    if not (compression == 0 and bpp in (8, 24, 32)) and not (compression == 1 and bpp == 8):
         return None
 
     flipped = height > 0  # positive height = bottom-up storage
@@ -193,6 +195,43 @@ def decode_bmp(raw: bytes) -> tuple[int, int, list[bytes]] | None:
             palette.append(bytes((raw[i + 2], raw[i + 1], raw[i])))
         if not palette:
             return None
+
+    if compression == 1:
+        # RLE8: (count, index) pairs with 0-escapes for end-of-line,
+        # end-of-bitmap, delta moves, and absolute runs. Decoded bottom-up,
+        # like every positive-height BMP.
+        grid = [bytearray(width) for _ in range(height)]
+        x = y = 0
+        i = pixel_offset
+        while i + 1 < len(raw) and y < height:
+            count, value = raw[i], raw[i + 1]
+            i += 2
+            if count > 0:
+                run = min(count, width - x)
+                grid[y][x:x + run] = bytes([value]) * run
+                x += run
+            elif value == 0:
+                x, y = 0, y + 1
+            elif value == 1:
+                break
+            elif value == 2:
+                if i + 1 >= len(raw):
+                    break
+                x = min(width, x + raw[i])
+                y += raw[i + 1]
+                i += 2
+            else:
+                run = min(value, width - x)
+                if i + value > len(raw):
+                    break
+                grid[y][x:x + run] = raw[i:i + run]
+                x += run
+                i += value + (value & 1)  # absolute runs pad to a word
+        out_rows = [
+            b"".join(palette[p] if p < len(palette) else b"\0\0\0" for p in grid[yy])
+            for yy in range(height - 1, -1, -1)
+        ]
+        return width, height, out_rows
 
     row_bytes = ((width * bpp + 31) // 32) * 4
     rows: list[bytes] = []

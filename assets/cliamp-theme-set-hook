@@ -6,3 +6,11 @@ current="$(cliamp theme 2>/dev/null | head -1)"
 if [[ -z $current || $current == *omarchy* ]]; then
   cliamp theme omarchy >/dev/null 2>&1 || true
 fi
+
+# While the player wears the synthetic Omarchy skin, rebuild it from the new
+# palette so the window recolors with the rest of the desktop.
+state="${XDG_STATE_HOME:-$HOME/.local/state}/omaamp/current.json"
+skinner="$HOME/.config/omarchy/plugins/io.github.jonnyace.omaamp/bin/skinner"
+if [[ -f $state && -x $skinner ]] && grep -q '"md5": "omarchy"' "$state"; then
+  "$skinner" sync >/dev/null 2>&1 || true
+fi
