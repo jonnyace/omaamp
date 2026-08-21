@@ -32,10 +32,15 @@ included.*
   unfolds beneath it in the skin's `pledit.bmp` chrome, exactly like the
   original's snapped-on playlist — pick a stream, load a TOML playlist, or
   paste any file path / stream URL.
-- **The bar widget** — browse the museum's curated top 200 offline or search
-  all 102k live, as the museum's own screenshots. One click dresses the
-  player *and* writes a matching [cliamp](https://github.com/bjarneo/cliamp)
+- **The bar dropdown** — a native Omarchy panel, the same shape as Wi-Fi and
+  Agents, that opens on a **mini music player**: now-playing, transport, and
+  volume for whatever is on the bus. The other tabs browse the museum's
+  curated top 200 offline (or search all 102k live, as the museum's own
+  screenshots), tune colors, and pick themes — one click dresses the player
+  *and* writes a matching [cliamp](https://github.com/bjarneo/cliamp)
   terminal theme.
+
+  <p align="center"><img src="docs/dropdown.png" width="420" alt="The bar dropdown's mini player tab"></p>
 - **The theme maker** — turn any skin into a complete Omarchy theme
   (`colors.toml` + a rendered wallpaper), which Omarchy's template engine
   fans out to your terminal, editor, browser and bar. One Winamp skin themes
