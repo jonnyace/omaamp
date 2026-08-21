@@ -364,6 +364,7 @@ Item {
               anchors.verticalCenter: parent.verticalCenter
               x: modelData.kind === "header" ? 0 : 4 * root.zoom
               text: modelData.label
+              textFormat: Text.PlainText
               color: modelData.kind === "header" ? root.selColor
                    : (parent.isCurrent ? root.currentColor : root.fgColor)
               font.family: root.fontName.length ? root.fontName : "monospace"
@@ -450,6 +451,7 @@ Item {
         anchors.margins: 2 * root.zoom
         visible: root.status.length > 0
         text: root.status
+        textFormat: Text.PlainText
         color: root.currentColor
         font.pixelSize: root.fontPx * 0.9
       }

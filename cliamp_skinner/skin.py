@@ -140,6 +140,16 @@ def _bmp_colors(raw: bytes, limit: int = 4000) -> list[RGB]:
     return out
 
 
+MAX_MEMBER_BYTES = 16 * 1024 * 1024
+
+
+def _capped_read(zf: zipfile.ZipFile, entry: str) -> bytes:
+    """Refuse any member whose decompressed size reads as a bomb, not a skin."""
+    if zf.getinfo(entry).file_size > MAX_MEMBER_BYTES:
+        raise ValueError(f"archive member too large: {entry}")
+    return zf.read(entry)
+
+
 def load(data: bytes, name: str = "skin") -> Skin:
     """Read a ``.wsz`` from bytes. Raises ``zipfile.BadZipFile`` if unreadable."""
     zf = zipfile.ZipFile(io.BytesIO(data))
@@ -154,14 +164,14 @@ def load(data: bytes, name: str = "skin") -> Skin:
     skin = Skin(name=name)
 
     if "pledit.txt" in members:
-        skin.pledit = parse_pledit(_decode(zf.read(members["pledit.txt"])))
+        skin.pledit = parse_pledit(_decode(_capped_read(zf, members["pledit.txt"])))
         if not skin.pledit:
             skin.notes.append("pledit.txt present but unparseable")
     else:
         skin.notes.append("no pledit.txt")
 
     if "viscolor.txt" in members:
-        vis = parse_viscolor(_decode(zf.read(members["viscolor.txt"])))
+        vis = parse_viscolor(_decode(_capped_read(zf, members["viscolor.txt"])))
         skin.spectrum = vis[VIS_SPECTRUM] if len(vis) >= 18 else vis
         if not skin.has_spectrum:
             skin.notes.append(f"viscolor.txt had only {len(vis)} colors")
@@ -172,7 +182,7 @@ def load(data: bytes, name: str = "skin") -> Skin:
     if not skin.has_text_colors or not skin.has_spectrum:
         for candidate in ("main.bmp", "pledit.bmp", "titlebar.bmp"):
             if candidate in members:
-                pixels = _bmp_colors(zf.read(members[candidate]))
+                pixels = _bmp_colors(_capped_read(zf, members[candidate]))
                 if pixels:
                     skin.artwork = pixels
                     break

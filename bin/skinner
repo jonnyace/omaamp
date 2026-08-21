@@ -76,25 +76,46 @@ def write_index(data: dict) -> None:
     INDEX.write_text(json.dumps(data, indent=1))
 
 
+def _require_md5(value: str) -> str:
+    """API identifiers become cache paths; only literal md5 hex may pass."""
+    if not museum.valid_md5(value):
+        raise ValueError(f"invalid skin identifier: {value!r}")
+    return value.lower()
+
+
+# Decompression caps for skin archives: any single sheet or text file over
+# this is not a skin asset, it is a bomb.
+MAX_MEMBER_BYTES = 16 * 1024 * 1024
+MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
+
+
+def _safe_read(zf: "zipfile.ZipFile", entry: str) -> bytes:
+    info = zf.getinfo(entry)
+    if info.file_size > MAX_MEMBER_BYTES:
+        raise ValueError(f"archive member too large: {entry} ({info.file_size} bytes)")
+    return zf.read(entry)
+
+
 def cache_screenshot(ref: museum.SkinRef) -> str:
     """Download a skin's screenshot once and return its local path.
 
     These are the museum's own 275x348 renders of the Winamp window, which is
     what makes the picker recognizable -- a row of hex swatches would not be.
     """
-    if not ref.screenshot_url:
+    if not ref.screenshot_url or not museum.valid_md5(ref.md5):
         return ""
     SHOTS.mkdir(parents=True, exist_ok=True)
     path = SHOTS / f"{ref.md5}.png"
     if not path.exists():
         try:
-            path.write_bytes(museum._request(ref.screenshot_url))
+            path.write_bytes(museum._request(ref.screenshot_url, limit=8 * 1024 * 1024))
         except (urllib.error.URLError, OSError):
             return ""
     return str(path)
 
 
 def fetch_skin(md5: str) -> bytes:
+    md5 = _require_md5(md5)
     SKINS.mkdir(parents=True, exist_ok=True)
     path = SKINS / f"{md5}.wsz"
     if path.exists():
@@ -248,9 +269,14 @@ def cmd_extract(args) -> int:
         for entry in zf.namelist():
             if not entry.endswith("/"):
                 members.setdefault(entry.rsplit("/", 1)[-1].lower(), entry)
+        total = 0
         for sheet in SHEETS:
             if sheet in members:
-                (out / sheet).write_bytes(zf.read(members[sheet]))
+                data = _safe_read(zf, members[sheet])
+                total += len(data)
+                if total > MAX_ARCHIVE_BYTES:
+                    raise ValueError("archive exceeds decompression budget")
+                (out / sheet).write_bytes(data)
     return emit(_sprite_payload(args.md5, out))
 
 
@@ -600,7 +626,10 @@ def cmd_themes(args) -> int:
     result = subprocess.run(
         ["cliamp", "theme", "list"], capture_output=True, text=True, timeout=15
     )
-    names = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    names = [
+        line.strip() for line in result.stdout.splitlines()
+        if line.strip() and re.fullmatch(r"[A-Za-z0-9._-]+", line.strip())
+    ]
     out = []
     for name in names:
         entry = {"name": name, "converted": name in index}

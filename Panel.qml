@@ -382,6 +382,9 @@ Panel {
                     Text {
                       width: parent.width
                       text: modelData.name
+                      // Museum-controlled string: PlainText, never AutoText,
+                      // or a skin named like markup renders as markup.
+                      textFormat: Text.PlainText
                       color: Color.popups.text
                       font.family: Style.font.family
                       font.pixelSize: Style.font.caption
@@ -619,6 +622,7 @@ Panel {
                     Text {
                       anchors.verticalCenter: parent.verticalCenter
                       text: modelData.name
+                      textFormat: Text.PlainText
                       color: modelData.name === root.appliedTheme ? Color.accent : Color.popups.text
                       font.family: Style.font.family
                       font.pixelSize: Style.font.body
@@ -628,6 +632,7 @@ Panel {
                       anchors.verticalCenter: parent.verticalCenter
                       visible: !!modelData.converted && !!modelData.source
                       text: modelData.source || ""
+                      textFormat: Text.PlainText
                       color: Util.alpha(Color.popups.text, 0.5)
                       font.family: Style.font.family
                       font.pixelSize: Style.font.caption
@@ -661,6 +666,8 @@ Panel {
         Text {
           width: parent.width
           visible: root.status.length > 0 || root.busy
+          // Status frequently embeds museum-controlled names.
+          textFormat: Text.PlainText
           text: root.busy ? "Loading…" : root.status
           color: Util.alpha(Color.popups.text, 0.7)
           font.family: Style.font.family

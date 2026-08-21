@@ -16,8 +16,46 @@ HYPR="$HOME/.config/hypr/hyprland.lua"
 MARK_BEGIN="-- >>> OmaAmp"
 MARK_END="-- <<< OmaAmp"
 
+# A path is only ever replaced or removed when it is provably ours; anything
+# else is the user's work and gets moved to a timestamped .bak instead of
+# being overwritten, and is left strictly alone on uninstall.
+is_ours() {
+  local path="$1" kind="$2"
+  [[ -e $path || -L $path ]] || return 1
+  case "$kind" in
+    bin-link)   [[ -L $path && "$(readlink -f "$path")" == "$ROOT/bin/omaamp" ]] ;;
+    theme-link) [[ -L $path && "$(readlink "$path")" == *"/omarchy/current/theme/cliamp.toml" ]] ;;
+    desktop)    grep -q "omaamp" "$path" 2>/dev/null ;;
+    marked)     grep -q "OmaAmp" "$path" 2>/dev/null ;;
+  esac
+}
+
+place() {
+  # place <kind> <dst> <install-command...>
+  local kind="$1" dst="$2"; shift 2
+  if [[ -e $dst || -L $dst ]] && ! is_ours "$dst" "$kind"; then
+    local bak="$dst.bak.$(date +%s)"
+    mv "$dst" "$bak"
+    echo "kept your existing $(basename "$dst") as $bak"
+  fi
+  "$@"
+}
+
+remove_ours() {
+  local kind="$1" dst="$2"
+  if is_ours "$dst" "$kind"; then
+    rm -f "$dst"
+  elif [[ -e $dst || -L $dst ]]; then
+    echo "left $dst in place (not installed by OmaAmp)"
+  fi
+}
+
 uninstall() {
-  rm -f "$BIN/omaamp" "$APPS/omaamp.desktop"         "$HOME/.config/omarchy/themed/cliamp.toml.tpl"         "$HOME/.config/cliamp/themes/omarchy.toml"         "$HOME/.config/omarchy/hooks/theme-set.d/50-omaamp-cliamp"
+  remove_ours bin-link "$BIN/omaamp"
+  remove_ours desktop "$APPS/omaamp.desktop"
+  remove_ours marked "$HOME/.config/omarchy/themed/cliamp.toml.tpl"
+  remove_ours theme-link "$HOME/.config/cliamp/themes/omarchy.toml"
+  remove_ours marked "$HOME/.config/omarchy/hooks/theme-set.d/50-omaamp-cliamp"
   if [[ -f $HYPR ]] && grep -qF -- "$MARK_BEGIN" "$HYPR"; then
     cp "$HYPR" "$HYPR.bak.$(date +%s)"
     sed -i "/${MARK_BEGIN}/,/${MARK_END}/d" "$HYPR"
@@ -33,10 +71,11 @@ uninstall() {
 mkdir -p "$BIN" "$APPS"
 
 # --- command on PATH ------------------------------------------------------
-ln -sf "$ROOT/bin/omaamp" "$BIN/omaamp"
+place bin-link "$BIN/omaamp" ln -sf "$ROOT/bin/omaamp" "$BIN/omaamp"
 echo "installed $BIN/omaamp"
 
 # --- launcher tile --------------------------------------------------------
+place desktop "$APPS/omaamp.desktop" true
 cat >"$APPS/omaamp.desktop" <<EOF
 [Desktop Entry]
 Version=1.0
@@ -61,9 +100,12 @@ command -v update-desktop-database >/dev/null && update-desktop-database "$APPS"
 # symlink makes it selectable inside cliamp as "omarchy"; the hook re-applies
 # it so a running player recolors without a restart.
 mkdir -p "$HOME/.config/omarchy/themed" "$HOME/.config/cliamp/themes"          "$HOME/.config/omarchy/hooks/theme-set.d"
-cp "$ROOT/assets/cliamp.toml.tpl" "$HOME/.config/omarchy/themed/cliamp.toml.tpl"
-ln -sf "$HOME/.local/state/omarchy/current/theme/cliamp.toml"        "$HOME/.config/cliamp/themes/omarchy.toml"
-cp "$ROOT/assets/cliamp-theme-set-hook"    "$HOME/.config/omarchy/hooks/theme-set.d/50-omaamp-cliamp"
+place marked "$HOME/.config/omarchy/themed/cliamp.toml.tpl" \
+  cp "$ROOT/assets/cliamp.toml.tpl" "$HOME/.config/omarchy/themed/cliamp.toml.tpl"
+place theme-link "$HOME/.config/cliamp/themes/omarchy.toml" \
+  ln -sf "$HOME/.local/state/omarchy/current/theme/cliamp.toml" "$HOME/.config/cliamp/themes/omarchy.toml"
+place marked "$HOME/.config/omarchy/hooks/theme-set.d/50-omaamp-cliamp" \
+  cp "$ROOT/assets/cliamp-theme-set-hook" "$HOME/.config/omarchy/hooks/theme-set.d/50-omaamp-cliamp"
 echo "installed cliamp theme template + theme-set hook"
 
 # --- Hyprland rules -------------------------------------------------------

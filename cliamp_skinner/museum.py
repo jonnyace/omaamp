@@ -10,7 +10,9 @@ request here goes out with an identifying one.
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 
@@ -18,6 +20,47 @@ API = "https://api.webamp.org/graphql"
 USER_AGENT = "cliamp-skinner/0.1 (+https://github.com/jonnyace/omaamp)"
 
 _SKIN_FIELDS = "md5 filename nsfw download_url screenshot_url museum_url"
+
+# Everything the API hands back is untrusted input. URLs are only followed to
+# these hosts over https (redirects re-checked hop by hop), identifiers must
+# be literal md5 hex before they touch a filesystem path, and responses are
+# read against a hard cap instead of trusting Content-Length.
+ALLOWED_HOSTS = frozenset({
+    "api.webamp.org",
+    "r2.webampskins.org",
+    "raw.githubusercontent.com",
+})
+MAX_RESPONSE_BYTES = 32 * 1024 * 1024  # largest legitimate object: a .wsz
+
+MD5_RE = re.compile(r"^[0-9a-f]{32}$")
+
+
+def valid_md5(value: str) -> bool:
+    return bool(MD5_RE.match(str(value or "").lower()))
+
+
+class ResponseTooLarge(RuntimeError):
+    pass
+
+
+def _check_url(url: str) -> str:
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https":
+        raise ValueError(f"refusing non-https URL: {url!r}")
+    if parts.hostname not in ALLOWED_HOSTS:
+        raise ValueError(f"refusing URL outside allowed hosts: {url!r}")
+    return url
+
+
+class _GuardedRedirects(urllib.request.HTTPRedirectHandler):
+    """Redirects are followed only if the target also passes the allowlist."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        _check_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_OPENER = urllib.request.build_opener(_GuardedRedirects())
 
 
 @dataclass
@@ -31,8 +74,9 @@ class SkinRef:
 
     @classmethod
     def from_json(cls, d: dict) -> "SkinRef":
+        md5 = str(d.get("md5") or "").lower()
         return cls(
-            md5=d.get("md5") or "",
+            md5=md5 if valid_md5(md5) else "",
             filename=d.get("filename") or "",
             nsfw=bool(d.get("nsfw")),
             download_url=d.get("download_url") or "",
@@ -41,10 +85,20 @@ class SkinRef:
         )
 
 
-def _request(url: str, data: bytes | None = None, headers: dict | None = None, timeout: int = 40) -> bytes:
+def _request(
+    url: str,
+    data: bytes | None = None,
+    headers: dict | None = None,
+    timeout: int = 40,
+    limit: int = MAX_RESPONSE_BYTES,
+) -> bytes:
+    _check_url(url)
     req = urllib.request.Request(url, data, {"User-Agent": USER_AGENT, **(headers or {})})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return resp.read()
+    with _OPENER.open(req, timeout=timeout) as resp:
+        body = resp.read(limit + 1)
+    if len(body) > limit:
+        raise ResponseTooLarge(f"{url} exceeded {limit} bytes")
+    return body
 
 
 def query(gql: str, variables: dict | None = None, timeout: int = 40) -> dict:
@@ -84,6 +138,9 @@ def browse(first: int = 40, offset: int = 0, *, include_nsfw: bool = False) -> l
 
 def _filter(rows: list[dict], include_nsfw: bool) -> list[SkinRef]:
     refs = [SkinRef.from_json(r) for r in rows if r]
+    # Entries whose md5 failed validation are unusable everywhere downstream
+    # (it is the cache key and the only identifier), so they are dropped here.
+    refs = [r for r in refs if r.md5]
     # The museum flags ~1.5k skins as NSFW. Excluded unless asked for, since
     # this feeds a picker that renders every result as a screenshot.
     return refs if include_nsfw else [r for r in refs if not r.nsfw]
@@ -91,4 +148,4 @@ def _filter(rows: list[dict], include_nsfw: bool) -> list[SkinRef]:
 
 def download(ref: SkinRef | str, timeout: int = 60) -> bytes:
     url = ref if isinstance(ref, str) else ref.download_url
-    return _request(url, timeout=timeout)
+    return _request(url, timeout=timeout, limit=MAX_RESPONSE_BYTES)

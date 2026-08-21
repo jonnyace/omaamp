@@ -593,6 +593,7 @@ FloatingWindow {
         Text {
           anchors.centerIn: parent
           text: "OMAAMP — " + root.skinName.toUpperCase()
+          textFormat: Text.PlainText
           color: root.tHi
           font.family: "monospace"
           font.pixelSize: 6 * root.zoom
@@ -639,6 +640,7 @@ FloatingWindow {
         x: 108 * root.zoom; y: 25 * root.zoom
         width: 156 * root.zoom
         text: root.marqueeText
+        textFormat: Text.PlainText
         color: root.tAcc
         font.family: "monospace"
         font.pixelSize: 7 * root.zoom

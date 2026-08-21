@@ -1,4 +1,5 @@
 #!/bin/bash
+# OmaAmp theme-set hook — safe to delete; ./install.sh --uninstall removes it.
 # Re-select cliamp's Omarchy-rendered theme after a theme switch, so a running
 # player picks the new palette up without being restarted. Quietly a no-op
 # when cliamp is not running or the user has chosen a different theme.
