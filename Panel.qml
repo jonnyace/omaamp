@@ -247,7 +247,11 @@ Panel {
   // Load lazily: 30 screenshot downloads on shell startup would be rude for a
   // panel the user may never open.
   onOpenedChanged: {
-    if (!opened || loadedOnce) return
+    if (!opened) return
+    // The dropdown always opens on the mini player -- the tab you browsed
+    // last session is rarely the tab you want when you click a music icon.
+    tab = 0
+    if (loadedOnce) return
     loadedOnce = true
     search()
     refreshThemes()
