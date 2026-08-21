@@ -133,10 +133,6 @@ result is 98.5% clean; the residual is two-color skins where "collapsed" is
 the honest answer. `python3 -m unittest discover -s tools` runs the
 regression suite; `tools/bench.py` re-runs the corpus harness.
 
-**Museum API.** `https://api.webamp.org/graphql`, public and unauthenticated.
-`sort: MUSEUM` is the site's own curated ranking. Files and screenshots come
-from `r2.webampskins.org`, which rejects Python's default urllib user-agent —
-send a real one.
 
 ## Layout
 
