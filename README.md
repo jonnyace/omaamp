@@ -1,11 +1,11 @@
 <h1 align="center">OmaAmp</h1>
-<p align="center"><b>Winamp, on your Omarchy desktop.</b><br>
+<p align="center"><b>Like Winamp but on your Omarchy desktop.</b><br>
 It really whips the llama's ass — pixel for pixel.<br><br>
-The real Winamp 2.x window on your desktop, wearing any of the 102,000
+  A mini music player in the bar — now playing, transport, volume — and a full-size player you can customize yourself.  The real Winamp 2.x window on your desktop, wearing any of the 102,000
 classic skins in the <a href="https://skins.webamp.org/">Winamp Skin
 Museum</a>: live spectrum, docked playlist, the works — playing your actual
 music over MPRIS, with <a href="https://github.com/bjarneo/cliamp">cliamp</a>
-as its headless engine. A mini player lives in your bar. And themes flow both
+as its headless engine. And themes flow both
 ways: any skin becomes a cliamp theme or a full Omarchy desktop theme, and
 your Omarchy theme dresses the player right back.</p>
 
