@@ -321,8 +321,11 @@ Panel {
           }
 
           // The player is its own app; from here it is one click away.
+          // Hidden on the compact Player tab: the width has no room for it
+          // there, and the tab carries its own "Open full player" button.
           Button {
             anchors.right: parent.right
+            visible: root.tab !== 0
             text: "Launch player"
             iconText: "󰐊"
             bordered: true
