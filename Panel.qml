@@ -448,21 +448,13 @@ Panel {
 
             PanelSeparator { width: parent.width }
 
-            Row {
+            // One action: the full player. Skins are a tab, not a button --
+            // the tab row is already sitting right above.
+            Button {
               anchors.horizontalCenter: parent.horizontalCenter
-              spacing: Style.spacing.controlGap
-
-              Button {
-                text: "Open full player"
-                bordered: true
-                onClicked: root.launchPlayer()
-              }
-
-              Button {
-                text: "Browse skins"
-                bordered: true
-                onClicked: root.tab = 1
-              }
+              text: "Open full player"
+              bordered: true
+              onClicked: root.launchPlayer()
             }
           }
 
