@@ -264,7 +264,9 @@ Panel {
     owner: root.barIdentity
     bar: root.bar
     open: root.opened
-    centerOnBar: true
+    // Anchored under the bar icon like Wi-Fi and Agents -- centerOnBar is
+    // the clock's affordance, not a music widget's.
+    centerOnBar: false
     focusTarget: keyCatcher
     // The Player tab is a compact now-playing card, Wi-Fi-panel sized; the
     // skin-browsing tabs need room for the screenshot wall and keep the
