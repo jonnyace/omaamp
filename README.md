@@ -1,6 +1,5 @@
-<h1 align="left">OmaAmp</h1>
-
-<p align="left"><b>Winamp, on your Omarchy desktop.</b><br>
+<h1 align="center">OmaAmp</h1>
+<p align="center"><b>Winamp, on your Omarchy desktop.</b><br>
 Any of the ~102,000 classic skins in the
 <a href="https://skins.webamp.org/">Winamp Skin Museum</a> — or a flat face
 that follows your Omarchy theme — driving whatever is actually playing.</p>
