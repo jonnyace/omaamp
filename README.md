@@ -12,10 +12,11 @@ that follows your Omarchy theme — driving whatever is actually playing.</p>
 <img alt="MPRIS" src="https://img.shields.io/badge/playback-MPRIS-8f6fc0">
 </p>
 
-![OmaAmp wearing three museum skins](docs/hero.png)
+![OmaAmp wearing base-2.91, Winamp5 Classified, and Zelda Amp III, each with its docked playlist](docs/hero.png)
 
-*Two museum skins with a live spectrum analyzer, and the docked playlist
-wearing the skin's own `pledit.bmp` chrome.*
+*Three classics — base-2.91, Winamp5 Classified, Zelda Amp III — live spectrum
+running, each with the docked playlist wearing that skin's own `pledit.bmp`
+chrome.*
 
 <p align="center"><img src="docs/tui.png" width="480" alt="The flat TUI face following the Omarchy theme, playlist docked"></p>
 
