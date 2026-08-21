@@ -1,5 +1,6 @@
 import QtQuick
 import Quickshell.Io
+import Quickshell.Services.Mpris
 import qs.Commons
 import qs.Ui
 import "Model.js" as Model
@@ -30,7 +31,7 @@ Panel {
   property string helper: ""
 
   property int tab: 0
-  readonly property var tabs: ["Browse", "Tune", "My themes"]
+  readonly property var tabs: ["Player", "Browse", "Tune", "My themes"]
 
   property var results: []
   property var themes: []
@@ -55,6 +56,38 @@ Panel {
   property bool editingHex: false
 
   readonly property int pageSize: Math.max(6, Number(setting("pageSize", 30)))
+
+  // ---- Mini player (tab 0) ---------------------------------------------
+  // The same cliamp-first MPRIS selection the standalone app uses, so the
+  // dropdown and the full player always describe the same playback.
+  readonly property var mprisPlayers: Mpris.players ? Mpris.players.values : []
+  readonly property var nowPlayer: {
+    var i
+    for (i = 0; i < mprisPlayers.length; i++)
+      if (mprisPlayers[i] && String(mprisPlayers[i].dbusName || "").indexOf("cliamp") !== -1) return mprisPlayers[i]
+    for (i = 0; i < mprisPlayers.length; i++)
+      if (mprisPlayers[i] && mprisPlayers[i].isPlaying) return mprisPlayers[i]
+    return mprisPlayers.length ? mprisPlayers[0] : null
+  }
+  readonly property bool nowPlaying: nowPlayer ? nowPlayer.isPlaying === true : false
+  readonly property string nowLabel: {
+    if (!nowPlayer) return "Nothing playing"
+    var t = String(nowPlayer.trackTitle || "")
+    var a = String(nowPlayer.trackArtist || "")
+    return a.length ? a + " — " + t : (t.length ? t : String(nowPlayer.identity || ""))
+  }
+
+  function miniTransport(action) {
+    var pl = nowPlayer
+    if (!pl) return
+    if (action === "toggle") {
+      if (pl.canTogglePlaying) pl.togglePlaying()
+      else if (pl.isPlaying && pl.canPause) pl.pause()
+      else if (pl.canPlay) pl.play()
+    } else if (action === "next" && pl.canGoNext) pl.next()
+    else if (action === "previous" && pl.canGoPrevious) pl.previous()
+    else if (action === "stop") pl.stop()
+  }
 
   // ---- Helper plumbing -------------------------------------------------
 
@@ -274,7 +307,7 @@ Panel {
                 bordered: true
                 onClicked: {
                   root.tab = index
-                  if (index === 2) root.refreshThemes()
+                  if (index === 3) root.refreshThemes()
                 }
               }
             }
@@ -297,7 +330,7 @@ Panel {
         Row {
           width: parent.width
           spacing: Style.spacing.controlGap
-          visible: root.tab === 0
+          visible: root.tab === 1
 
           TextField {
             id: searchField
@@ -320,10 +353,97 @@ Panel {
           width: parent.width
           height: Math.max(Style.space(120), layout.height - y)
 
+          // Player: a mini music player, Wi-Fi/Agents-panel shaped -- the
+          // dropdown is useful before you ever open the full window.
+          Column {
+            anchors.fill: parent
+            visible: root.tab === 0
+            spacing: Style.spacing.lg
+
+            PanelSectionHeader { text: "Now playing" }
+
+            Text {
+              width: parent.width
+              text: root.nowLabel
+              textFormat: Text.PlainText
+              color: Color.popups.text
+              font.family: Style.font.family
+              font.pixelSize: Style.font.title
+              elide: Text.ElideRight
+            }
+
+            Text {
+              width: parent.width
+              visible: root.nowPlayer !== null
+              text: (root.nowPlaying ? "Playing" : "Paused")
+                + (root.nowPlayer && root.nowPlayer.identity ? " · " + root.nowPlayer.identity : "")
+              textFormat: Text.PlainText
+              color: Util.alpha(Color.popups.text, 0.6)
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
+            }
+
+            Row {
+              spacing: Style.spacing.controlGap
+
+              PanelActionButton {
+                iconText: "󰒮"
+                tooltipText: "Previous"
+                onClicked: root.miniTransport("previous")
+              }
+              PanelActionButton {
+                iconText: root.nowPlaying ? "󰏤" : "󰐊"
+                tooltipText: root.nowPlaying ? "Pause" : "Play"
+                onClicked: root.miniTransport("toggle")
+              }
+              PanelActionButton {
+                iconText: "󰓛"
+                tooltipText: "Stop"
+                onClicked: root.miniTransport("stop")
+              }
+              PanelActionButton {
+                iconText: "󰒭"
+                tooltipText: "Next"
+                onClicked: root.miniTransport("next")
+              }
+            }
+
+            PanelSeparator { width: parent.width }
+
+            PanelSectionHeader { text: "Volume" }
+
+            PanelSlider {
+              width: parent.width
+              bar: root.bar
+              visible: root.nowPlayer !== null && root.nowPlayer.volumeSupported === true
+              value: root.nowPlayer && root.nowPlayer.volumeSupported
+                ? Math.max(0, Math.min(1, root.nowPlayer.volume)) : 0
+              onMoved: function(v) { if (root.nowPlayer) root.nowPlayer.volume = v }
+            }
+
+            PanelSeparator { width: parent.width }
+
+            Row {
+              spacing: Style.spacing.controlGap
+
+              Button {
+                text: "Open full player"
+                bordered: true
+                onClicked: root.launchPlayer()
+              }
+
+              Button {
+                text: "Browse skins"
+                bordered: true
+                onClicked: root.tab = 1
+              }
+            }
+          }
+
           // Browse: a wall of the museum's own Winamp-window screenshots.
           Flickable {
             anchors.fill: parent
-            visible: root.tab === 0
+            visible: root.tab === 1
             clip: true
             contentWidth: width
             contentHeight: grid.height
@@ -400,7 +520,7 @@ Panel {
           // Tune: the seven values cliamp reads, each editable as hex.
           Flickable {
             anchors.fill: parent
-            visible: root.tab === 1
+            visible: root.tab === 2
             clip: true
             contentWidth: width
             contentHeight: tuneColumn.implicitHeight
@@ -546,7 +666,7 @@ Panel {
           // Mine: what is installed, ours marked.
           Flickable {
             anchors.fill: parent
-            visible: root.tab === 2
+            visible: root.tab === 3
             clip: true
             contentWidth: width
             contentHeight: mineColumn.implicitHeight
