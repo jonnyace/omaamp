@@ -378,8 +378,9 @@ Panel {
               textFormat: Text.PlainText
               color: Color.popups.text
               font.family: Style.font.family
-              font.pixelSize: Style.font.title
+              font.pixelSize: Style.font.heading
               elide: Text.ElideRight
+              horizontalAlignment: Text.AlignHCenter
             }
 
             Text {
@@ -391,29 +392,41 @@ Panel {
               color: Util.alpha(Color.popups.text, 0.6)
               font.family: Style.font.family
               font.pixelSize: Style.font.caption
+              horizontalAlignment: Text.AlignHCenter
             }
 
+            // Transport is the whole point of this tab: centred, and sized
+            // for aiming at, not for squinting at.
             Row {
-              spacing: Style.spacing.controlGap
+              anchors.horizontalCenter: parent.horizontalCenter
+              spacing: Style.spacing.xl
 
               PanelActionButton {
                 iconText: "󰒮"
                 tooltipText: "Previous"
+                fontSize: Style.font.heading
+                size: Style.space(40)
                 onClicked: root.miniTransport("previous")
               }
               PanelActionButton {
                 iconText: root.nowPlaying ? "󰏤" : "󰐊"
                 tooltipText: root.nowPlaying ? "Pause" : "Play"
+                fontSize: Style.font.display
+                size: Style.space(48)
                 onClicked: root.miniTransport("toggle")
               }
               PanelActionButton {
                 iconText: "󰓛"
                 tooltipText: "Stop"
+                fontSize: Style.font.heading
+                size: Style.space(40)
                 onClicked: root.miniTransport("stop")
               }
               PanelActionButton {
                 iconText: "󰒭"
                 tooltipText: "Next"
+                fontSize: Style.font.heading
+                size: Style.space(40)
                 onClicked: root.miniTransport("next")
               }
             }
@@ -434,6 +447,7 @@ Panel {
             PanelSeparator { width: parent.width }
 
             Row {
+              anchors.horizontalCenter: parent.horizontalCenter
               spacing: Style.spacing.controlGap
 
               Button {
