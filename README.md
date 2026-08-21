@@ -1,13 +1,27 @@
-# OmaAmp
+<h1 align="center">OmaAmp</h1>
 
-Winamp, on your Omarchy desktop, wearing any of the ~102,000 classic skins in
-the [Winamp Skin Museum](https://skins.webamp.org/) — driving whatever is
-actually playing.
+<p align="center"><b>Winamp, on your Omarchy desktop.</b><br>
+Any of the ~102,000 classic skins in the
+<a href="https://skins.webamp.org/">Winamp Skin Museum</a> — or a flat face
+that follows your Omarchy theme — driving whatever is actually playing.</p>
+
+<p align="center">
+<img alt="MIT license" src="https://img.shields.io/badge/license-MIT-4c9a52">
+<img alt="Omarchy Quattro" src="https://img.shields.io/badge/Omarchy-Quattro%204.x-5b6ee1">
+<img alt="102k skins" src="https://img.shields.io/badge/skins-102%2C639-e0a458">
+<img alt="MPRIS" src="https://img.shields.io/badge/playback-MPRIS-8f6fc0">
+</p>
 
 ![OmaAmp wearing three museum skins](docs/hero.png)
 
 *Two museum skins with a live spectrum analyzer, and the docked playlist
 wearing the skin's own `pledit.bmp` chrome.*
+
+<p align="center"><img src="docs/tui.png" width="480" alt="The flat TUI face following the Omarchy theme, playlist docked"></p>
+
+*The flat TUI face: the same player drawn from your Omarchy theme's colors —
+it recolors on every `omarchy theme set`, live spectrum and docked playlist
+included.*
 
 ## What you get
 
