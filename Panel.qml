@@ -262,8 +262,11 @@ Panel {
     open: root.opened
     centerOnBar: true
     focusTarget: keyCatcher
-    contentWidth: panel.fittedContentWidth(Style.space(640))
-    contentHeight: panel.fittedContentHeight(Style.space(560))
+    // The Player tab is a compact now-playing card, Wi-Fi-panel sized; the
+    // skin-browsing tabs need room for the screenshot wall and keep the
+    // large footprint.
+    contentWidth: panel.fittedContentWidth(Style.space(root.tab === 0 ? 380 : 640))
+    contentHeight: panel.fittedContentHeight(Style.space(root.tab === 0 ? 285 : 560))
 
     PanelKeyCatcher {
       id: keyCatcher
