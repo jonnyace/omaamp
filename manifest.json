@@ -5,7 +5,7 @@
   "version": "0.1.0",
   "author": "jonnyace",
   "license": "MIT",
-  "description": "Winamp on your desktop: browse 102,000 classic skins, dress the OmaAmp player and cliamp in any of them.",
+  "description": "Winamp, reborn on Omarchy. The real Winamp 2.x window on your desktop, pixel-for-pixel, wearing any of 102,000 classic skins from the Skin Museum \u2014 live spectrum, docked playlist, MPRIS playback with cliamp as its headless engine \u2014 plus a mini music player in the bar. Skins become cliamp and desktop themes; your Omarchy theme dresses the player back.",
   "kinds": [
     "bar-widget"
   ],
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "OmaAmp",
-    "description": "Skin browser and launcher for the OmaAmp player, with cliamp theme conversion.",
+    "description": "A mini music player in the bar \u2014 now playing, transport, volume \u2014 with the Skin Museum behind it: browse the classics, tune the colors, and dress the player, cliamp, and your whole desktop from one dropdown.",
     "category": "Media",
     "allowMultiple": false,
     "defaultSection": "right",
