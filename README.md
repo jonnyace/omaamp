@@ -85,10 +85,14 @@ museum entries flagged NSFW are filtered from browse and search.
   focuses the player.
 - **Browser panel**: *Browse* is the museum's own top ranking (cached,
   offline); typing searches everything. Clicking a skin re-dresses a running
-  player live. *Tune* edits the seven derived cliamp colors — live, when the
+  player live. If opening a skin from the museum does not hand off to OmaAmp,
+  paste its `skins.webamp.org/skin/…` link into the fallback field. *Tune*
+  edits the seven derived cliamp colors — live, when the
   player wears the TUI face — and holds the **Make Omarchy theme** /
-  **Apply to desktop** buttons. *My themes* lists installed cliamp themes;
-  picking one dresses the TUI player and cliamp together.
+  **Apply to desktop** buttons. It also switches the player between its
+  adaptive enlarged scale and the original 275×116
+  one-physical-pixel-per-skin-pixel size. *My themes* lists installed cliamp
+  themes; picking one dresses the TUI player and cliamp together.
 - **Player**: opens as its own tile (never hovering over your windows),
   scales in whole-pixel steps up to Winamp's classic double-size, floats
   when you toggle it. The letterbox is transparent — wallpaper shows through
@@ -108,7 +112,7 @@ museum entries flagged NSFW are filtered from browse and search.
 
 ```bash
 omaamp                  # launch, or focus the running instance
-omaamp --skin <md5>     # wear a specific museum skin
+omaamp --skin <id-or-link>  # wear a skin by md5 or a copied museum link
 omaamp --zoom 3         # bigger pixels
 omaamp --no-engine      # don't start a cliamp daemon
 omaamp --quit

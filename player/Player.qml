@@ -25,18 +25,22 @@ FloatingWindow {
   // -- a tiled OmaAmp fills its tile at 2x or 3x instead of rattling around
   // at launch size or smearing at a fractional one.
   property int baseZoom: 2
+  property bool originalSize: false
   // Zoom is chosen in PHYSICAL pixels, not logical ones: on a scale-2 panel
   // a logical zoom of 1.5 is exactly 3 hardware pixels per skin pixel --
-  // still perfectly crisp nearest-neighbour -- while whole-logical steps
-  // could only offer 2 or 4. Fit the tile in physical units, cap at 1.5x
-  // the launch size (whole-logical stepping made the only next size up 2x,
-  // which read as chunky rather than big), and convert back.
+  // still perfectly crisp nearest-neighbour. Original mode is exactly one
+  // hardware pixel per skin pixel, which is Winamp's native 275x116 size.
   readonly property real dpr: devicePixelRatio > 0 ? devicePixelRatio : 1
+  readonly property real preferredZoom: originalSize ? 1 / dpr : baseZoom
   readonly property real zoom: {
     var fitPhys = Math.floor(Math.min(
       width * dpr / S.MAIN_WIDTH,
       height * dpr / S.MAIN_HEIGHT))
-    var capPhys = Math.max(1, Math.round(baseZoom * dpr * 1.5))
+    // Large mode keeps the existing adaptive 1.5x headroom in a roomy tile;
+    // original mode hard-caps the artwork at one physical pixel per source.
+    var capPhys = originalSize
+      ? 1
+      : Math.max(1, Math.round(baseZoom * dpr * 1.5))
     return Math.max(1, Math.min(capPhys, fitPhys)) / dpr
   }
 
@@ -55,6 +59,8 @@ FloatingWindow {
     var state
     try { state = JSON.parse(String(raw)) } catch (e) { return }
     if (!state) return
+    originalSize = state.size === "original"
+    requestPreferredSize()
     if (state.mode === "tui" && state.colors) {
       tuiMode = true
       tuiColors = state.colors
@@ -134,10 +140,20 @@ FloatingWindow {
   }
 
   title: "OmaAmp" + (skinName.length ? " — " + skinName : "")
-  implicitWidth: S.MAIN_WIDTH * baseZoom
-  implicitHeight: S.MAIN_HEIGHT * baseZoom
-  minimumSize: Qt.size(S.MAIN_WIDTH, S.MAIN_HEIGHT)
+  implicitWidth: Math.ceil(S.MAIN_WIDTH * preferredZoom)
+  implicitHeight: Math.ceil(S.MAIN_HEIGHT * preferredZoom)
+  minimumSize: Qt.size(
+    Math.ceil(S.MAIN_WIDTH / dpr),
+    Math.ceil(S.MAIN_HEIGHT / dpr))
   maximumSize: Qt.size(16384, 16384)
+
+  function requestPreferredSize() {
+    // A floating compositor honors this immediately; a tiled compositor keeps
+    // its tile while the artwork itself switches scale within it.
+    implicitWidth = Math.ceil(S.MAIN_WIDTH * preferredZoom)
+    implicitHeight = Math.ceil(S.MAIN_HEIGHT * (playlist_.shown ? 2 : 1) * preferredZoom)
+  }
+
   // Transparent letterbox: in a tile bigger than the skin, the wallpaper
   // shows through around the artwork instead of a black slab.
   color: "transparent"
@@ -150,7 +166,7 @@ FloatingWindow {
     playlist_.shown = !playlist_.shown
     // implicitHeight is the client-side resize request; a tiling layout
     // ignores it, a floating window honors it.
-    implicitHeight = (S.MAIN_HEIGHT * (playlist_.shown ? 2 : 1)) * zoom
+    implicitHeight = Math.ceil((S.MAIN_HEIGHT * (playlist_.shown ? 2 : 1)) * preferredZoom)
   }
 
   function transport(action) {

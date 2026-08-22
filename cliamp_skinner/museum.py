@@ -33,10 +33,47 @@ ALLOWED_HOSTS = frozenset({
 MAX_RESPONSE_BYTES = 32 * 1024 * 1024  # largest legitimate object: a .wsz
 
 MD5_RE = re.compile(r"^[0-9a-f]{32}$")
+SKIN_PATH_RE = re.compile(r"^/skin/([0-9a-f]{32})/?$", re.I)
 
 
 def valid_md5(value: str) -> bool:
     return bool(MD5_RE.match(str(value or "").lower()))
+
+
+def skin_md5(value: str) -> str:
+    """Return the skin id from a museum link or a literal md5.
+
+    Museum links are user-pasted input. Parse the URL instead of looking for
+    a convenient 32-character substring, so a different host cannot disguise
+    itself as a Skin Museum link.
+    """
+    value = str(value or "").strip()
+    if valid_md5(value):
+        return value.lower()
+
+    try:
+        parts = urllib.parse.urlsplit(value)
+        port = parts.port
+    except ValueError:
+        parts = None
+        port = None
+
+    if (
+        parts
+        and parts.scheme.lower() == "https"
+        and parts.hostname == "skins.webamp.org"
+        and port in (None, 443)
+        and parts.username is None
+        and parts.password is None
+    ):
+        match = SKIN_PATH_RE.fullmatch(parts.path)
+        if match:
+            return match.group(1).lower()
+
+    raise ValueError(
+        "paste a https://skins.webamp.org/skin/<id> link "
+        "or a 32-character skin id"
+    )
 
 
 class ResponseTooLarge(RuntimeError):

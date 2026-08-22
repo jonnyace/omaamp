@@ -44,6 +44,7 @@ Panel {
   property string paletteName: ""
   property string appliedTheme: ""
   property string currentMd5: ""
+  property string playerSize: "large"
   // Set once make-theme finishes: the generated Omarchy theme, ready to apply.
   property string omarchyTheme: ""
   property string query: ""
@@ -133,6 +134,21 @@ Panel {
     themeRun(["use", md5])
   }
 
+  function useSkinLink(value) {
+    var link = String(value || "").trim()
+    if (!link.length) return
+    status = "Opening pasted skin…"
+    themeRun(["use", link])
+  }
+
+  function togglePlayerSize() {
+    var next = playerSize === "original" ? "large" : "original"
+    status = next === "original"
+      ? "Switching to original 1× size…"
+      : "Switching to larger size…"
+    themeRun(["size", next])
+  }
+
   function launchPlayer() {
     if (bar) bar.run(helper.replace(/skinner$/, "omaamp"))
   }
@@ -192,6 +208,13 @@ Panel {
 
   function onThemeResult(data) {
     if (data.error) { status = data.error; return }
+    if (data.size) playerSize = data.size
+    if (data.resized) {
+      status = data.resized === "original"
+        ? "Using original 1× size"
+        : "Using larger size"
+      return
+    }
     if (data.removed) { status = data.removed + " removed"; refreshThemes(); return }
     if (data.applied) { appliedTheme = data.applied; status = "Using " + data.applied; return }
     if (data.worn) {
@@ -279,7 +302,7 @@ Panel {
       anchors.fill: parent
       // The search field and the hex fields swallow their own keys; the panel
       // shortcuts would otherwise eat every letter the user typed.
-      blocked: searchField.activeFocus || root.editingHex
+      blocked: searchField.activeFocus || skinLinkField.activeFocus || root.editingHex
 
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
@@ -357,6 +380,29 @@ Panel {
             iconText: "󰕐"
             tooltipText: "Search"
             onClicked: root.search()
+          }
+        }
+
+        // The museum itself is still useful for browsing and sharing. If a
+        // skin will not open through desktop integration, its copied page URL
+        // is a direct fallback here.
+        Row {
+          width: parent.width
+          spacing: Style.spacing.controlGap
+          visible: root.tab === 1
+
+          TextField {
+            id: skinLinkField
+            width: parent.width - useLinkButton.width - Style.spacing.controlGap
+            placeholderText: "Paste skins.webamp.org/skin/… link"
+            onAccepted: root.useSkinLink(text)
+          }
+
+          PanelActionButton {
+            id: useLinkButton
+            iconText: "󰌹"
+            tooltipText: "Wear skin from pasted museum link"
+            onClicked: root.useSkinLink(skinLinkField.text)
           }
         }
 
@@ -548,6 +594,38 @@ Panel {
               id: tuneColumn
               width: parent.width
               spacing: Style.spacing.md
+
+              PanelSectionHeader { text: "Player size" }
+
+              Row {
+                width: parent.width
+                spacing: Style.spacing.controlGap
+
+                Button {
+                  id: playerSizeButton
+                  text: root.playerSize === "original"
+                    ? "Use larger size"
+                    : "Use original 1× size"
+                  bordered: true
+                  tooltipText: root.playerSize === "original"
+                    ? "Return to OmaAmp's adaptive enlarged scale"
+                    : "Render each Winamp skin pixel as one physical screen pixel"
+                  onClicked: root.togglePlayerSize()
+                }
+
+                Text {
+                  anchors.verticalCenter: parent.verticalCenter
+                  width: tuneColumn.width - playerSizeButton.width - Style.spacing.controlGap
+                  text: root.playerSize === "original"
+                    ? "Original 275 × 116 pixels"
+                    : "Adaptive enlarged player"
+                  color: Util.alpha(Color.popups.text, 0.6)
+                  font.family: Style.font.family
+                  font.pixelSize: Style.font.caption
+                }
+              }
+
+              PanelSeparator { width: parent.width }
 
               PanelSectionHeader {
                 text: root.paletteName.length ? root.paletteName : "No theme loaded"

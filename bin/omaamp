@@ -7,7 +7,7 @@
 # bar, notifications and lock screen.
 #
 #   omaamp                  launch (or focus, if already running)
-#   omaamp --skin <md5>     launch wearing a specific museum skin
+#   omaamp --skin <id|url>  launch wearing a specific museum skin
 #   omaamp --zoom 3         integer pixel scale (default 2)
 #   omaamp --no-engine      do not start a cliamp daemon for the backend
 #   omaamp --quit
@@ -74,7 +74,7 @@ fi
 
 if [[ ! -f "${XDG_STATE_HOME:-$HOME/.local/state}/omaamp/current.json" ]]; then
   echo "omaamp: no skin selected yet — pick one from the Winamp Skins bar widget," >&2
-  echo "        or run: omaamp --skin <md5>" >&2
+  echo "        or run: omaamp --skin <id-or-museum-link>" >&2
   exit 1
 fi
 
