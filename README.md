@@ -24,9 +24,10 @@ chrome.*
 
 <p align="center"><img src="docs/tui.png" width="480" alt="The flat TUI face following the Omarchy theme, playlist docked"></p>
 
-*The flat TUI face: the same player drawn from your Omarchy theme's colors —
-it recolors on every `omarchy theme set`, live spectrum and docked playlist
-included.*
+*The TUI face: the same player drawn as cliamp draws itself — lines of
+monospace text in your Omarchy theme's colors, a `━━━` seek line, a
+block-character spectrum, `[Shuffle] [Repeat]` toggles. It recolors on every
+`omarchy theme set`, live spectrum and docked playlist included.*
 
 ## What you get
 
@@ -100,10 +101,12 @@ museum entries flagged NSFW are filtered from browse and search.
 - **Following your Omarchy theme**: museum skins are bitmap art — they keep
   their own colors and do **not** recolor when you switch Omarchy themes.
   Two ways to get a player that matches your desktop:
-  - **My themes** tab: pick any cliamp theme and the player wears the flat
-    **TUI face** — the same layout drawn from the theme's seven colors,
-    deliberately close to cliamp's own look. Because it is color-driven,
-    the *Tune* tab recolors it live, and it is the default face for themes.
+  - **My themes** tab: pick any cliamp theme and the player wears the
+    **TUI face** — the same 275x116 player drawn as text from the theme's
+    seven colors, laid out like cliamp's own screen: no buttons or boxes,
+    just glyph transport, a heavy-line seek bar and bracketed toggles.
+    Because it is color-driven, the *Tune* tab recolors it live, and it is
+    the default face for themes.
   - **Sync to Omarchy theme**: generates a synthetic bitmap skin — the
     classic Winamp art recolored through your live palette — rebuilt by the
     theme-set hook on every `omarchy theme set` while worn.
