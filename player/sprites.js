@@ -249,3 +249,71 @@ function tuiVisRamp(red, yellow, green) {
   }
   return out
 }
+
+// ---- TUI face text rendering --------------------------------------------
+// The flat face is drawn the way cliamp draws itself: lines of monospace
+// text. These build those lines so the QML only has to color them.
+
+var TUI_BLOCKS = [" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"]
+
+// cliamp's fractional-block spectrum: `rows` strings, top row first, each
+// `cols` cells wide -- one bar cell then one space, like renderBars.
+function tuiSpectrum(bands, cols, rows) {
+  var count = Math.max(1, Math.ceil(cols / 2))
+  var levels = resample(bands, count)
+  var out = []
+  for (var r = 0; r < rows; r++) {
+    var top = (rows - r) / rows
+    var bottom = (rows - r - 1) / rows
+    var line = ""
+    for (var i = 0; i < count; i++) {
+      var l = Math.max(0, Math.min(1, levels.length > i ? levels[i] : 0))
+      var ch
+      if (l >= top) ch = "█"
+      else if (l <= bottom) ch = " "
+      else ch = TUI_BLOCKS[Math.max(1, Math.min(8, Math.round((l - bottom) / (top - bottom) * 8)))]
+      line += ch
+      if (i < count - 1) line += " "
+    }
+    out.push(line.substr(0, cols))
+  }
+  return out
+}
+
+function repeatChar(ch, n) {
+  var s = ""
+  for (var i = 0; i < n; i++) s += ch
+  return s
+}
+
+// cliamp's seek bar at half-cell resolution: heavy line, ╸ as the half step.
+function tuiSeekBar(progress, cols) {
+  var p = Math.max(0, Math.min(1, Number(progress) || 0))
+  var sub = Math.floor(p * 2 * cols)
+  var full = Math.floor(sub / 2)
+  var half = sub % 2 === 1 && full < cols
+  return {
+    fill: repeatChar("━", full) + (half ? "╸" : ""),
+    rest: repeatChar("━", cols - full - (half ? 1 : 0))
+  }
+}
+
+// " STREAMING " centred in the line, for a live stream with no duration.
+function tuiStreamBar(cols) {
+  var label = " STREAMING "
+  if (cols <= label.length) return label.substr(0, Math.max(0, cols))
+  var pad = cols - label.length
+  var left = Math.floor(pad / 2)
+  return repeatChar("━", left) + label + repeatChar("━", pad - left)
+}
+
+function tuiVolumeBar(level, cols) {
+  var filled = Math.round(Math.max(0, Math.min(1, Number(level) || 0)) * cols)
+  return { fill: repeatChar("█", filled), rest: repeatChar("░", cols - filled) }
+}
+
+function tuiTime(seconds) {
+  var total = Math.max(0, Math.floor(Number(seconds) || 0))
+  var m = Math.floor(total / 60), s = total % 60
+  return (m < 10 ? "0" : "") + m + ":" + (s < 10 ? "0" : "") + s
+}

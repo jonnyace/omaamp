@@ -585,44 +585,85 @@ FloatingWindow {
     // ------------------------------------------------------------------
     // The TUI face. Same 275x116 footprint and the same wiring as the
     // sprite skin -- transport, seek, marquee, analyzer, PL -- but drawn
-    // flat from theme colors, deliberately close to cliamp's own look.
+    // the way cliamp draws itself: lines of monospace text in theme colors.
+    // No boxes, no buttons: a heavy-line seek bar, a block-character
+    // spectrum, glyph transport, bracketed toggles.
     Item {
+      id: tui
       visible: root.tuiMode
       width: S.MAIN_WIDTH * root.zoom
       height: S.MAIN_HEIGHT * root.zoom
 
+      readonly property real fs: 7 * root.zoom
+      readonly property real pad: 6 * root.zoom
+      readonly property real pitch: 12 * root.zoom
+      readonly property real innerW: width - 2 * pad
+      readonly property color green: root.tuiColors.green || "#859900"
+      readonly property color yellow: root.tuiColors.yellow || "#b58900"
+      readonly property color red: root.tuiColors.red || "#dc322f"
+      readonly property color dim: Qt.alpha(root.tFg, 0.55)
+
+      // Everything is laid out in character cells, like a terminal.
+      Text {
+        id: cell
+        visible: false
+        text: "━"
+        font.family: "monospace"
+        font.pixelSize: tui.fs
+      }
+      readonly property real cellW: cell.implicitWidth > 0 ? cell.implicitWidth : fs * 0.6
+      readonly property int cols: Math.max(20, Math.floor(innerW / cellW))
+
+      readonly property bool paused: root.player
+        && root.player.playbackState === MprisPlaybackState.Paused
+      readonly property bool streaming: root.playing && root.duration <= 0
+      readonly property var volBar: S.tuiVolumeBar(root.volumeLevel, 10)
+      readonly property var spectrum: S.tuiSpectrum(root.bands, cols, 3)
+
       Rectangle {
         anchors.fill: parent
         color: root.tBg
-        border.width: Math.max(1, root.zoom)
-        border.color: Qt.alpha(root.tFg, 0.45)
       }
 
-      // Title strip: drag surface, name, close.
-      Rectangle {
+      // Row 0: title, mode label, close. The whole row drags the window.
+      Item {
         id: tuiTitle
-        x: root.zoom; y: root.zoom
-        width: parent.width - 2 * root.zoom
-        height: 11 * root.zoom
-        color: Qt.alpha(root.tAcc, 0.22)
+        x: tui.pad; y: tui.pad
+        width: tui.innerW; height: tui.pitch
+
+        MouseArea {
+          anchors.fill: parent
+          anchors.rightMargin: 3 * tui.cellW
+          onPressed: if (root.Window.window) root.Window.window.startSystemMove()
+        }
 
         Text {
-          anchors.centerIn: parent
-          text: "OMAAMP — " + root.skinName.toUpperCase()
-          textFormat: Text.PlainText
-          color: root.tHi
+          text: "O M A A M P"
+          color: root.tAcc
           font.family: "monospace"
-          font.pixelSize: 6 * root.zoom
+          font.pixelSize: tui.fs
           font.bold: true
         }
 
         Text {
+          anchors.right: closeX.left
+          anchors.rightMargin: 2 * tui.cellW
+          width: Math.min(implicitWidth, tui.innerW - 16 * tui.cellW)
+          text: "[" + root.skinName + "]"
+          textFormat: Text.PlainText
+          elide: Text.ElideRight
+          color: tui.dim
+          font.family: "monospace"
+          font.pixelSize: tui.fs
+        }
+
+        Text {
+          id: closeX
           anchors.right: parent.right
-          anchors.rightMargin: 4 * root.zoom
-          anchors.verticalCenter: parent.verticalCenter
           text: "✕"
-          color: closeArea.containsMouse ? root.tHi : root.tFg
-          font.pixelSize: 7 * root.zoom
+          color: closeArea.containsMouse ? root.tHi : tui.dim
+          font.family: "monospace"
+          font.pixelSize: tui.fs
 
           MouseArea {
             id: closeArea
@@ -632,187 +673,252 @@ FloatingWindow {
             onClicked: root.visible = false
           }
         }
-
-        MouseArea {
-          anchors.fill: parent
-          anchors.rightMargin: 16 * root.zoom
-          onPressed: if (root.Window.window) root.Window.window.startSystemMove()
-        }
       }
 
-      // Time + play state.
+      // Row 1: ♫ track (the marquee, exactly as cliamp scrolls its title).
       Text {
-        x: 12 * root.zoom; y: 20 * root.zoom
-        text: (root.playing ? "▶ " : "⏸ ")
-          + root.clock[0] + root.clock[1] + ":" + root.clock[2] + root.clock[3]
-        color: root.tHi
-        font.family: "monospace"
-        font.pixelSize: 17 * root.zoom
-        font.bold: true
-      }
-
-      // Marquee.
-      Text {
-        x: 108 * root.zoom; y: 25 * root.zoom
-        width: 156 * root.zoom
-        text: root.marqueeText
+        x: tui.pad; y: tui.pad + tui.pitch
+        width: tui.innerW
+        text: "♫ " + root.marqueeText
         textFormat: Text.PlainText
+        clip: true
         color: root.tAcc
         font.family: "monospace"
-        font.pixelSize: 7 * root.zoom
-        clip: true
-        elide: Text.ElideNone
+        font.pixelSize: tui.fs
       }
 
-      // Analyzer well: same bars, flat ramp from the theme's red/yellow/green.
-      Row {
-        x: 12 * root.zoom; y: 48 * root.zoom
-        spacing: S.VIS_BAR_GAP * root.zoom
-        visible: root.bands.length > 0
+      // Row 2: elapsed / total on the left, play state on the right.
+      Item {
+        x: tui.pad; y: tui.pad + 2 * tui.pitch
+        width: tui.innerW; height: tui.pitch
 
-        Repeater {
-          model: S.resample(root.bands, S.visBarCount())
+        Text {
+          text: S.tuiTime(root.seeking ? root.seekFraction * root.duration : root.elapsed)
+            + " / " + (root.duration > 0 ? S.tuiTime(root.duration)
+                       : (root.playing ? "LIVE" : "00:00"))
+          color: root.tHi
+          font.family: "monospace"
+          font.pixelSize: tui.fs
+        }
 
-          Column {
-            required property real modelData
-            spacing: 0
-            readonly property int lit: Math.round(Math.max(0, Math.min(1, modelData)) * S.VIS_ROWS)
+        Row {
+          anchors.right: parent.right
+          spacing: 0
+          readonly property bool lit: root.playing || tui.paused || root.seeking
 
-            Repeater {
-              model: S.VIS_ROWS
-
-              Rectangle {
-                required property int index
-                width: S.VIS_BAR_WIDTH * root.zoom
-                height: root.zoom
-                color: index < S.VIS_ROWS - parent.lit ? "transparent"
-                     : (root.tRamp.length > index ? root.tRamp[index] : root.tAcc)
-              }
-            }
+          Text {
+            text: root.seeking ? "⟳" : tui.paused ? "⏸" : tui.streaming ? "●" : root.playing ? "▶" : "■"
+            color: parent.lit ? tui.green : tui.dim
+            font.family: tui.paused ? "Noto Sans Symbols 2" : "monospace"
+            font.pixelSize: tui.fs
+            font.bold: parent.lit
+          }
+          Text {
+            text: root.seeking ? " Seeking..." : tui.paused ? " Paused"
+                : tui.streaming ? " Streaming" : root.playing ? " Playing" : " Stopped"
+            color: parent.lit ? tui.green : tui.dim
+            font.family: "monospace"
+            font.pixelSize: tui.fs
+            font.bold: parent.lit
           }
         }
       }
 
-      // Volume, flat.
-      Rectangle {
-        x: 108 * root.zoom; y: 52 * root.zoom
-        width: 68 * root.zoom; height: 4 * root.zoom
-        color: Qt.alpha(root.tFg, 0.25)
+      // Rows 3-5: the spectrum, cliamp's fractional blocks -- green at the
+      // base, yellow, red at the peaks, from the theme's own signal colors.
+      Column {
+        id: tuiSpec
+        x: tui.pad; y: tui.pad + 3 * tui.pitch
+        spacing: 0
+
+        Repeater {
+          model: 3
+
+          Text {
+            required property int index
+            text: tui.spectrum.length > index ? tui.spectrum[index] : ""
+            color: index === 0 ? tui.red : index === 1 ? tui.yellow : tui.green
+            font.family: "monospace"
+            font.pixelSize: tui.fs
+          }
+        }
+      }
+
+      // Row 6: the seek bar. cliamp draws a run of ━ cells; in a terminal
+      // those touch, but as laid-out text they leave hairline gaps, so the
+      // line itself is drawn as a stroke of exactly ━'s weight over the
+      // same cell grid. The STREAMING label sits over it, as in cliamp.
+      Item {
+        id: tuiSeek
+        x: tui.pad; y: tuiSpec.y + tuiSpec.height + 4 * root.zoom
+        width: tui.innerW; height: tui.pitch
+
+        readonly property real barW: tui.cols * tui.cellW
+        readonly property real stroke: Math.max(1, Math.round(tui.fs * 0.18))
 
         Rectangle {
-          width: parent.width * root.volumeLevel
-          height: parent.height
+          y: (cell.implicitHeight - tuiSeek.stroke) / 2
+          width: tuiSeek.barW
+          height: tuiSeek.stroke
+          color: root.duration > 0 ? tui.dim : Qt.alpha(root.tFg, 0.3)
+        }
+
+        Rectangle {
+          y: (cell.implicitHeight - tuiSeek.stroke) / 2
+          width: tui.streaming ? tuiSeek.barW : tuiSeek.barW * root.progress
+          height: tuiSeek.stroke
           color: root.tAcc
         }
 
-        MouseArea {
-          anchors.fill: parent
-          anchors.margins: -3 * root.zoom
-          onPressed: function(m) { if (root.player) root.player.volume = Math.max(0, Math.min(1, m.x / width)) }
-          onPositionChanged: function(m) { if (pressed && root.player) root.player.volume = Math.max(0, Math.min(1, m.x / width)) }
-        }
-      }
+        Text {
+          visible: tui.streaming
+          anchors.horizontalCenter: parent.horizontalCenter
+          anchors.horizontalCenterOffset: (tuiSeek.barW - tui.innerW) / 2
+          text: " STREAMING "
+          color: root.tAcc
+          font.family: "monospace"
+          font.pixelSize: tui.fs
 
-      // Shuffle / repeat readouts.
-      Text {
-        x: 200 * root.zoom; y: 49 * root.zoom
-        text: "SHUF " + (root.player && root.player.shuffle ? "●" : "○")
-          + "  REP " + (root.player && root.player.loopState !== MprisLoopState.None ? "●" : "○")
-        color: root.tFg
-        font.family: "monospace"
-        font.pixelSize: 6 * root.zoom
-
-        MouseArea {
-          anchors.fill: parent
-          onClicked: function(m) {
-            if (m.x < width / 2) {
-              if (root.player && root.player.shuffleSupported) root.player.shuffle = !root.player.shuffle
-            } else root.cycleLoop()
-          }
-        }
-      }
-
-      // Seek bar.
-      Rectangle {
-        x: 12 * root.zoom; y: 74 * root.zoom
-        width: 251 * root.zoom; height: 5 * root.zoom
-        visible: root.duration > 0
-        color: Qt.alpha(root.tFg, 0.25)
-
-        Rectangle {
-          width: parent.width * root.progress
-          height: parent.height
-          color: root.tHi
+          Rectangle { anchors.fill: parent; z: -1; color: root.tBg }
         }
 
         MouseArea {
           anchors.fill: parent
-          anchors.margins: -4 * root.zoom
-          onPressed: function(m) { root.seeking = true; root.seekFraction = Math.max(0, Math.min(1, m.x / width)) }
-          onPositionChanged: function(m) { if (pressed) root.seekFraction = Math.max(0, Math.min(1, m.x / width)) }
+          enabled: root.duration > 0
+          cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+          onPressed: function(m) { root.seeking = true; root.seekFraction = Math.max(0, Math.min(1, m.x / tuiSeek.barW)) }
+          onPositionChanged: function(m) { if (pressed) root.seekFraction = Math.max(0, Math.min(1, m.x / tuiSeek.barW)) }
           onReleased: root.commitSeek()
           onCanceled: root.seeking = false
         }
       }
 
-      // Transport row.
-      Row {
-        x: 12 * root.zoom; y: 88 * root.zoom
-        spacing: 6 * root.zoom
+      // Row 7: transport glyphs on the left, VOL bar on the right.
+      Item {
+        x: tui.pad; y: tuiSeek.y + tui.pitch
+        width: tui.innerW; height: tui.pitch
 
-        Repeater {
-          model: [
-            { glyph: "󰒮", action: "previous" },
-            { glyph: "󰐊", action: "play" },
-            { glyph: "󰏤", action: "pause" },
-            { glyph: "󰓛", action: "stop" },
-            { glyph: "󰒭", action: "next" }
-          ]
+        Row {
+          spacing: 2 * tui.cellW
 
-          Rectangle {
-            required property var modelData
-            width: 22 * root.zoom
-            height: 18 * root.zoom
-            color: tArea.containsMouse ? Qt.alpha(root.tAcc, 0.25) : Qt.alpha(root.tFg, 0.1)
-            border.width: 1
-            border.color: Qt.alpha(root.tFg, 0.4)
+          Repeater {
+            model: [
+              { glyph: "⏮", action: "previous" },
+              { glyph: "▶", action: "play" },
+              { glyph: "⏸", action: "pause" },
+              { glyph: "■", action: "stop" },
+              { glyph: "⏭", action: "next" }
+            ]
 
             Text {
-              anchors.centerIn: parent
+              required property var modelData
               text: modelData.glyph
               color: tArea.containsMouse ? root.tHi : root.tFg
-              font.pixelSize: 9 * root.zoom
-            }
+              // The transport symbols only exist in symbol and emoji fonts
+              // here; name the outline face so Qt never picks the emoji one.
+              font.family: "Noto Sans Symbols 2"
+              font.pixelSize: tui.fs
 
-            MouseArea {
-              id: tArea
-              anchors.fill: parent
-              hoverEnabled: true
-              onClicked: root.transport(modelData.action)
+              MouseArea {
+                id: tArea
+                anchors.fill: parent
+                anchors.margins: -2 * root.zoom
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: root.transport(modelData.action)
+              }
             }
           }
         }
 
-        Rectangle {
-          width: 30 * root.zoom
-          height: 18 * root.zoom
-          color: playlist_.shown ? Qt.alpha(root.tAcc, 0.35) : Qt.alpha(root.tFg, 0.1)
-          border.width: 1
-          border.color: Qt.alpha(root.tFg, 0.4)
+        Row {
+          anchors.right: parent.right
+          spacing: 0
 
           Text {
-            anchors.centerIn: parent
-            text: "PL"
-            color: playlist_.shown ? root.tHi : root.tFg
+            text: "VOL "
+            color: root.tHi
             font.family: "monospace"
-            font.pixelSize: 8 * root.zoom
+            font.pixelSize: tui.fs
             font.bold: true
           }
 
-          MouseArea {
-            anchors.fill: parent
-            onClicked: root.togglePlaylist()
+          Item {
+            id: volRow
+            width: volCells.width
+            height: volCells.height
+
+            Row {
+              id: volCells
+              spacing: 0
+
+              Text {
+                text: tui.volBar.fill
+                color: tui.green
+                font.family: "monospace"
+                font.pixelSize: tui.fs
+              }
+              Text {
+                text: tui.volBar.rest
+                color: tui.dim
+                font.family: "monospace"
+                font.pixelSize: tui.fs
+              }
+            }
+
+            MouseArea {
+              anchors.fill: parent
+              anchors.margins: -2 * root.zoom
+              cursorShape: Qt.PointingHandCursor
+              function set(m) {
+                var v = Math.max(0, Math.min(1, (m.x - 2 * root.zoom) / (10 * tui.cellW)))
+                root.volumeFraction = v
+                if (root.player && root.player.volumeSupported) root.player.volume = v
+              }
+              onPressed: function(m) { root.holdingVolume = true; set(m) }
+              onPositionChanged: function(m) { if (pressed) set(m) }
+              onReleased: root.holdingVolume = false
+              onCanceled: root.holdingVolume = false
+            }
           }
+
+          Text {
+            text: " " + Math.round(root.volumeLevel * 100) + "%"
+            color: tui.dim
+            font.family: "monospace"
+            font.pixelSize: tui.fs
+          }
+        }
+      }
+
+      // Row 8: cliamp's bracketed toggles, PL at the right.
+
+      Item {
+        x: tui.pad; y: tuiSeek.y + 2 * tui.pitch
+        width: tui.innerW; height: tui.pitch
+
+        Row {
+          spacing: tui.cellW
+
+          TuiToggle {
+            label: "Shuffle"
+            on: root.player && root.player.shuffle === true
+            onClicked: if (root.player && root.player.shuffleSupported) root.player.shuffle = !root.player.shuffle
+          }
+
+          TuiToggle {
+            label: "Repeat: " + (!root.player || root.player.loopState === MprisLoopState.None ? "Off"
+                              : root.player.loopState === MprisLoopState.Track ? "One" : "All")
+            on: root.player && root.player.loopState !== MprisLoopState.None
+            onClicked: root.cycleLoop()
+          }
+        }
+
+        TuiToggle {
+          anchors.right: parent.right
+          label: "PL"
+          on: playlist_.shown
+          onClicked: root.togglePlaylist()
         }
       }
     }
@@ -841,4 +947,49 @@ FloatingWindow {
     function show(): void { root.visible = true }
     function quit(): void { Qt.quit() }
   }
+
+  // One of cliamp's [Toggle] pills: dim brackets, accent label; the
+  // whole thing accent-bold when on. Used by the TUI face's bottom row.
+  component TuiToggle: Item {
+    id: toggle
+    property string label: ""
+    property bool on: false
+    signal clicked()
+    width: toggleRow.width
+    height: toggleRow.height
+
+    Row {
+      id: toggleRow
+      spacing: 0
+
+      Text {
+        text: "["
+        color: toggle.on ? root.tAcc : tui.dim
+        font.family: "monospace"; font.pixelSize: tui.fs
+        font.bold: toggle.on
+      }
+      Text {
+        text: toggle.label
+        color: toggleArea.containsMouse ? root.tHi : root.tAcc
+        font.family: "monospace"; font.pixelSize: tui.fs
+        font.bold: toggle.on
+      }
+      Text {
+        text: "]"
+        color: toggle.on ? root.tAcc : tui.dim
+        font.family: "monospace"; font.pixelSize: tui.fs
+        font.bold: toggle.on
+      }
+    }
+
+    MouseArea {
+      id: toggleArea
+      anchors.fill: parent
+      anchors.margins: -2 * root.zoom
+      hoverEnabled: true
+      cursorShape: Qt.PointingHandCursor
+      onClicked: toggle.clicked()
+    }
+  }
+
 }

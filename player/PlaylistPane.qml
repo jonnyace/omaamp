@@ -144,6 +144,7 @@ Item {
   onShownChanged: if (shown) refresh()
 
   readonly property real fontPx: 8 * zoom
+  readonly property color tuiDim: Qt.alpha(root.fgColor, 0.55)
   readonly property int rowH: 11 * zoom
 
   // Frame thicknesses, in skin pixels. The flat face needs far less chrome
@@ -157,29 +158,36 @@ Item {
     id: frame
     anchors.fill: parent
 
-    // Flat chrome for TUI mode: border + title strip in theme colors.
+    // Flat chrome for TUI mode: no frame at all, just cliamp's
+    // "── Playlist ──────" separator line above the rows.
     Rectangle {
       anchors.fill: parent
       visible: !!root.tui
       color: root.bgColor
-      border.width: 1
-      border.color: Qt.alpha(root.fgColor, 0.45)
     }
 
-    Rectangle {
+    Row {
       visible: !!root.tui
-      x: 1; y: 1
-      width: parent.width - 2
-      height: root.frameTop * root.zoom - 1
-      color: Qt.alpha(root.selColor, 0.3)
+      x: root.frameLeft * root.zoom + 2 * root.zoom
+      // Ends where the rows' own separators end (list inset + label inset).
+      width: parent.width - (root.frameLeft + root.frameRight + 8) * root.zoom
+      height: root.frameTop * root.zoom
+      spacing: 0
 
       Text {
-        anchors.centerIn: parent
-        text: "PLAYLIST"
-        color: root.currentColor
+        id: plHeader
+        anchors.verticalCenter: parent.verticalCenter
+        text: "── Playlist "
+        color: root.tuiDim
         font.family: "monospace"
-        font.pixelSize: 6 * root.zoom
-        font.bold: true
+        font.pixelSize: root.fontPx
+      }
+
+      Rectangle {
+        anchors.verticalCenter: parent.verticalCenter
+        width: parent.width - plHeader.width
+        height: Math.max(1, root.zoom)
+        color: root.tuiDim
       }
     }
 
@@ -355,23 +363,52 @@ Item {
             required property var modelData
             width: list.width
             height: root.rowH
-            color: hover.containsMouse && modelData.kind === "track" ? root.selColor : "transparent"
+            // pledit highlights the hovered row with selectedbg; cliamp has
+            // no fills at all, it recolors the text instead.
+            color: hover.containsMouse && modelData.kind === "track" && !root.tui
+              ? root.selColor : "transparent"
 
             readonly property bool isCurrent: modelData.kind === "track"
               && root.nowTitle.length && modelData.title === root.nowTitle
+            readonly property bool isHeader: modelData.kind === "header"
+
+            // cliamp's playing marker, in the gutter the "  " indent leaves.
+            Text {
+              visible: !!root.tui && parent.isCurrent
+              anchors.verticalCenter: parent.verticalCenter
+              x: 0
+              text: "▶"
+              color: root.currentColor
+              font.family: "monospace"
+              font.pixelSize: root.fontPx
+              font.bold: true
+            }
 
             Text {
+              id: rowLabel
               anchors.verticalCenter: parent.verticalCenter
-              x: modelData.kind === "header" ? 0 : 4 * root.zoom
-              text: modelData.label
+              x: parent.isHeader ? 0 : (root.tui ? 2 : 1) * 4 * root.zoom
+              text: root.tui && parent.isHeader ? "── " + modelData.label + " " : modelData.label
               textFormat: Text.PlainText
-              color: modelData.kind === "header" ? root.selColor
-                   : (parent.isCurrent ? root.currentColor : root.fgColor)
+              color: parent.isHeader ? (root.tui ? root.tuiDim : root.selColor)
+                   : (root.tui && hover.containsMouse ? root.selColor
+                   : parent.isCurrent ? root.currentColor : root.fgColor)
               font.family: root.fontName.length ? root.fontName : "monospace"
               font.pixelSize: root.fontPx
-              font.bold: modelData.kind === "header" || parent.isCurrent
+              font.bold: (parent.isHeader && !root.tui) || parent.isCurrent
+                || (!!root.tui && hover.containsMouse && !parent.isHeader)
               elide: Text.ElideRight
-              width: list.width - 8 * root.zoom
+              width: Math.min(implicitWidth, list.width - x - 4 * root.zoom)
+            }
+
+            // Header rows become cliamp's labeled separators: ── NAME ─────
+            Rectangle {
+              visible: !!root.tui && parent.isHeader
+              anchors.verticalCenter: parent.verticalCenter
+              x: rowLabel.x + rowLabel.width
+              width: Math.max(0, list.width - x - 4 * root.zoom)
+              height: Math.max(1, root.zoom)
+              color: root.tuiDim
             }
 
             MouseArea {
@@ -395,12 +432,24 @@ Item {
             height: root.rowH + 2 * root.zoom
             color: "transparent"
             border.color: root.fgColor
-            border.width: 1
+            border.width: root.tui ? 0 : 1
+
+            Text {
+              id: prompt
+              visible: !!root.tui
+              anchors.verticalCenter: parent.verticalCenter
+              text: "> "
+              color: entry.activeFocus ? root.selColor : root.tuiDim
+              font.family: "monospace"
+              font.pixelSize: root.fontPx
+              font.bold: true
+            }
 
             TextInput {
               id: entry
               anchors.fill: parent
               anchors.margins: 2 * root.zoom
+              anchors.leftMargin: root.tui ? prompt.width : 2 * root.zoom
               color: root.currentColor
               font.family: root.fontName.length ? root.fontName : "monospace"
               font.pixelSize: root.fontPx
@@ -424,14 +473,14 @@ Item {
             id: playBtn
             width: 40 * root.zoom
             height: root.rowH + 2 * root.zoom
-            color: playArea.pressed ? root.selColor : "transparent"
+            color: playArea.pressed && !root.tui ? root.selColor : "transparent"
             border.color: root.fgColor
-            border.width: 1
+            border.width: root.tui ? 0 : 1
 
             Text {
               anchors.centerIn: parent
-              text: "PLAY"
-              color: root.fgColor
+              text: root.tui ? "[PLAY]" : "PLAY"
+              color: root.tui && playArea.containsMouse ? root.currentColor : root.fgColor
               font.family: root.fontName.length ? root.fontName : "monospace"
               font.pixelSize: root.fontPx
             }
@@ -439,6 +488,7 @@ Item {
             MouseArea {
               id: playArea
               anchors.fill: parent
+              hoverEnabled: true
               onClicked: { root.playInput(entry.text); entry.text = "" }
             }
           }
