@@ -101,7 +101,8 @@ museum entries flagged NSFW are filtered from browse and search.
   stack rather than letting the lower pane escape a short tile. Drag the
   playlist's lower-right corner to resize it in classic 29-pixel steps; its
   open state and preferred height survive restarts. Drop a local `.wsz` or
-  `.zip` skin anywhere on the window to install and wear it.
+  `.zip` skin anywhere on the window to install and wear it. Skins with a
+  classic `region.txt` keep their cut-out, transparent main-window shape.
 - **Following your Omarchy theme**: museum skins are bitmap art — they keep
   their own colors and do **not** recolor when you switch Omarchy themes.
   Two ways to get a player that matches your desktop:

@@ -93,9 +93,24 @@ class SpriteCache(unittest.TestCase):
         self.assertEqual((out / "cbuttons.bmp").read_bytes(), b"controls")
 
     def test_region_file_survives_normalization(self):
-        data = archive([("main.bmp", b"main"), ("REGION.TXT", b"[Normal]\n")])
+        region = (
+            b"[Normal]\nNumPoints=5\n"
+            b"PointList=10,0,275,0,275,116,0,116,0,10\n"
+        )
+        data = archive([("main.bmp", b"main"), ("REGION.TXT", region)])
         out = skinner.extract_archive(data, "0" * 32)
-        self.assertEqual((out / "region.txt").read_bytes(), b"[Normal]\n")
+        self.assertEqual((out / "region.txt").read_bytes(), region)
+        self.assertTrue((out / "region-normal.png").read_bytes().startswith(b"\x89PNG"))
+
+    def test_full_rectangle_region_needs_no_mask(self):
+        text = "[Normal]\nNumPoints=4\nPointList=0,0,275,0,275,116,0,116\n"
+        self.assertIsNone(skinner.normal_region_png(text))
+
+    def test_region_polygons_cut_pixels_out_of_the_main_window(self):
+        text = "[Normal]\nNumPoints=5\nPointList=10,0,275,0,275,116,0,116,0,10\n"
+        polygons = skinner.parse_normal_region(text)
+        self.assertFalse(skinner._inside_polygon(0.5, 0.5, polygons[0]))
+        self.assertTrue(skinner._inside_polygon(20.5, 0.5, polygons[0]))
 
 
 if __name__ == "__main__":

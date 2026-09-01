@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
@@ -19,6 +20,7 @@ FloatingWindow {
   property string skinDir: ""
   property bool extendedDigits: false
   property string skinName: ""
+  property string regionMask: ""
 
   // Launch-time zoom sets the initial window size; after that the skin
   // scales to whatever space the window actually has, at integer steps only
@@ -65,6 +67,7 @@ FloatingWindow {
     originalSize = state.size === "original"
     playlistHeight = S.snapPlaylistHeight(Number(state.playlistHeight || S.MAIN_HEIGHT))
     playlist_.shown = state.playlistOpen === true
+    regionMask = String(state.regionMask || "")
     requestPreferredSize()
     if (state.mode === "tui" && state.colors) {
       tuiMode = true
@@ -188,6 +191,18 @@ FloatingWindow {
     id: droppedSkinProc
     running: false
     command: []
+  }
+
+  Image {
+    id: regionMaskSource
+    visible: false
+    layer.enabled: true
+    source: root.regionMask.length ? "file://" + root.regionMask : ""
+    width: S.MAIN_WIDTH * root.zoom
+    height: S.MAIN_HEIGHT * root.zoom
+    smooth: false
+    mipmap: false
+    asynchronous: false
   }
 
   // One window, Winamp-docked: toggling PL grows or shrinks the window by
@@ -327,9 +342,18 @@ FloatingWindow {
     spacing: 0
 
     Item {
+    id: bitmapFace
     visible: !root.tuiMode
     width: S.MAIN_WIDTH * root.zoom
     height: S.MAIN_HEIGHT * root.zoom
+    layer.enabled: root.regionMask.length > 0
+    layer.smooth: false
+    layer.effect: MultiEffect {
+      maskEnabled: true
+      maskSource: regionMaskSource
+      maskThresholdMin: 0.5
+      maskSpreadAtMin: 0
+    }
 
     // ---- Background ------------------------------------------------------
     Image {
