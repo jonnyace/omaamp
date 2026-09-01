@@ -18,6 +18,7 @@ Item {
   property string skinDir: ""
   property string helper: ""
   property real zoom: 2
+  property int preferredSkinHeight: S.PLAYLIST_MIN_HEIGHT
   // Owned by the PL button in Player.qml; the pledit close box clears it.
   property bool shown: false
   // The hosting window's focus state, for the active/idle title-bar art.
@@ -25,6 +26,8 @@ Item {
   // Set to the seven theme colors when the player wears the flat TUI face:
   // the pledit bitmaps hide and the pane draws its own chrome to match.
   property var tui: null
+  signal heightRequested(int skinPixels, bool commit)
+  signal closeRequested()
 
   // ---- pledit.txt colours ------------------------------------------------
   property color bgColor: "#000000"
@@ -241,7 +244,7 @@ Item {
         var cx = frame.width - S.PLEDIT.closeAt[0] * root.zoom
         var cy = S.PLEDIT.closeAt[1] * root.zoom
         if (mouse.x >= cx && mouse.y >= cy && mouse.y <= cy + S.PLEDIT.closeAt[3] * root.zoom) {
-          root.shown = false
+          root.closeRequested()
           return
         }
         if (root.Window.window) root.Window.window.startSystemMove()
@@ -320,6 +323,33 @@ Item {
       }
     }
 
+    // Winamp stretched the editor one 29px side tile at a time. This handle
+    // changes the floating window's preferred size; in a compositor tile the
+    // pane still consumes the space Hyprland assigned to the window.
+    MouseArea {
+      id: resizeGrip
+      z: 20
+      anchors.right: parent.right
+      anchors.bottom: parent.bottom
+      width: 20 * root.zoom
+      height: 20 * root.zoom
+      cursorShape: Qt.SizeVerCursor
+      property real pressY: 0
+      property int pressHeight: S.PLAYLIST_MIN_HEIGHT
+
+      onPressed: function(mouse) {
+        pressY = mouse.y
+        pressHeight = root.preferredSkinHeight
+      }
+      onPositionChanged: function(mouse) {
+        if (!pressed) return
+        root.heightRequested(
+          S.snapPlaylistHeight(pressHeight + (mouse.y - pressY) / root.zoom), false)
+      }
+      onReleased: root.heightRequested(root.preferredSkinHeight, true)
+      onCanceled: root.heightRequested(root.preferredSkinHeight, true)
+    }
+
     SkinSprite {
       visible: !root.tui
       dir: root.skinDir; sheet: "pledit.bmp"; zoom: root.zoom
@@ -330,10 +360,10 @@ Item {
       MouseArea {
         // LIST OPTS: reload playlists from disk, so a TOML dropped into
         // ~/.config/cliamp/playlists/ shows up without reopening the pane.
-        x: 114 * root.zoom
+        x: 106 * root.zoom
         y: 8 * root.zoom
-        width: 32 * root.zoom
-        height: 26 * root.zoom
+        width: 22 * root.zoom
+        height: 18 * root.zoom
         onClicked: { root.status = "Playlists reloaded"; root.refresh() }
       }
     }

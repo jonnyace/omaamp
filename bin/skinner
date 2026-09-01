@@ -80,13 +80,37 @@ def atomic_write_json(path: Path, payload: object) -> None:
     atomic_write_text(path, json.dumps(payload, indent=1))
 
 
+PLAYER_PREFERENCES = {
+    "size": "large",
+    "playlistOpen": False,
+    "playlistHeight": 116,
+}
+
+
+def current_player_preferences() -> dict:
+    try:
+        current = json.loads(CURRENT.read_text())
+    except (OSError, ValueError):
+        current = {}
+    preferences = dict(PLAYER_PREFERENCES)
+    if current.get("size") in ("large", "original"):
+        preferences["size"] = current["size"]
+    preferences["playlistOpen"] = current.get("playlistOpen") is True
+    try:
+        height = int(current.get("playlistHeight", 116))
+    except (TypeError, ValueError):
+        height = 116
+    preferences["playlistHeight"] = max(116, min(696, height))
+    return preferences
+
+
+def with_player_preferences(payload: dict) -> dict:
+    return {**payload, **current_player_preferences()}
+
+
 def current_player_size() -> str:
     """Keep the size choice when another command replaces player state."""
-    try:
-        value = json.loads(CURRENT.read_text()).get("size")
-    except (OSError, ValueError):
-        value = None
-    return value if value in ("large", "original") else "large"
+    return current_player_preferences()["size"]
 
 
 def emit(payload: dict) -> int:
@@ -475,14 +499,13 @@ def cmd_use(args) -> int:
     index[slug] = {"md5": args.md5, "source": filename}
     write_index(index)
 
-    atomic_write_json(CURRENT, {
+    atomic_write_json(CURRENT, with_player_preferences({
         "md5": args.md5,
         "dir": sprites["dir"],
         "name": re.sub(r"\.(wsz|zip)$", "", filename, flags=re.I),
         "extendedDigits": sprites["extendedDigits"],
         "theme": slug,
-        "size": current_player_size(),
-    })
+    }))
 
     if not args.no_theme:
         subprocess.run(["cliamp", "theme", slug], capture_output=True, text=True, timeout=15)
@@ -699,7 +722,7 @@ def cmd_use_theme(args) -> int:
     if missing:
         return emit({"error": f"theme {slug} is missing {', '.join(missing)}"})
 
-    atomic_write_json(CURRENT, {
+    atomic_write_json(CURRENT, with_player_preferences({
         "mode": "tui",
         "md5": "",
         "dir": "",
@@ -707,8 +730,7 @@ def cmd_use_theme(args) -> int:
         "theme": slug,
         "extendedDigits": False,
         "colors": colors,
-        "size": current_player_size(),
-    })
+    }))
     subprocess.run(["cliamp", "theme", slug], capture_output=True, text=True, timeout=15)
     return emit({"worn": slug, "mode": "tui", "colors": colors})
 
@@ -730,6 +752,25 @@ def cmd_size(args) -> int:
     state["size"] = args.mode
     atomic_write_json(CURRENT, state)
     return emit({"resized": args.mode, "size": args.mode})
+
+
+def cmd_layout(args) -> int:
+    """Persist player-only layout without taking ownership of playback."""
+    try:
+        state = json.loads(CURRENT.read_text())
+    except (OSError, ValueError):
+        return emit({"error": "pick a skin or theme before changing layout"})
+    if args.playlist is not None:
+        state["playlistOpen"] = args.playlist == "open"
+    if args.height is not None:
+        # Classic Winamp grew the playlist in 29-skin-pixel frame tiles.
+        steps = round((args.height - 116) / 29)
+        state["playlistHeight"] = max(116, min(696, 116 + steps * 29))
+    atomic_write_json(CURRENT, state)
+    return emit({
+        "playlistOpen": state.get("playlistOpen") is True,
+        "playlistHeight": state.get("playlistHeight", 116),
+    })
 
 
 def cmd_apply(args) -> int:
@@ -881,7 +922,7 @@ def cmd_sync(args) -> int:
     index["omarchy"] = {"md5": "", "source": "Omarchy theme"}
     write_index(index)
 
-    atomic_write_json(CURRENT, {
+    atomic_write_json(CURRENT, with_player_preferences({
         "mode": "tui",
         "md5": "",
         "dir": "",
@@ -889,8 +930,7 @@ def cmd_sync(args) -> int:
         "theme": "omarchy",
         "extendedDigits": False,
         "colors": colors,
-        "size": current_player_size(),
-    })
+    }))
     subprocess.run(["cliamp", "theme", "omarchy"], capture_output=True, text=True, timeout=15)
     return emit({"worn": "omarchy", "mode": "tui", "theme": "omarchy", "colors": colors})
 
@@ -931,6 +971,11 @@ def main() -> int:
     p = sub.add_parser("size", help="set the player to large or original 1x size")
     p.add_argument("mode", choices=("large", "original"))
     p.set_defaults(fn=cmd_size)
+
+    p = sub.add_parser("layout", help="persist the standalone player's layout")
+    p.add_argument("--playlist", choices=("open", "closed"))
+    p.add_argument("--height", type=int)
+    p.set_defaults(fn=cmd_layout)
 
     p = sub.add_parser("use-theme", help="wear a cliamp theme as the flat TUI face")
     p.add_argument("name")

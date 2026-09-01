@@ -26,6 +26,9 @@ FloatingWindow {
   // at launch size or smearing at a fractional one.
   property int baseZoom: 2
   property bool originalSize: false
+  property int playlistHeight: S.MAIN_HEIGHT
+  readonly property int stackSkinHeight: S.MAIN_HEIGHT
+    + (playlist_.shown ? playlistHeight : 0)
   // Zoom is chosen in PHYSICAL pixels, not logical ones: on a scale-2 panel
   // a logical zoom of 1.5 is exactly 3 hardware pixels per skin pixel --
   // still perfectly crisp nearest-neighbour. Original mode is exactly one
@@ -35,7 +38,7 @@ FloatingWindow {
   readonly property real zoom: {
     var fitPhys = Math.floor(Math.min(
       width * dpr / S.MAIN_WIDTH,
-      height * dpr / S.MAIN_HEIGHT))
+      height * dpr / root.stackSkinHeight))
     // Large mode keeps the existing adaptive 1.5x headroom in a roomy tile;
     // original mode hard-caps the artwork at one physical pixel per source.
     var capPhys = originalSize
@@ -60,6 +63,8 @@ FloatingWindow {
     try { state = JSON.parse(String(raw)) } catch (e) { return }
     if (!state) return
     originalSize = state.size === "original"
+    playlistHeight = S.snapPlaylistHeight(Number(state.playlistHeight || S.MAIN_HEIGHT))
+    playlist_.shown = state.playlistOpen === true
     requestPreferredSize()
     if (state.mode === "tui" && state.colors) {
       tuiMode = true
@@ -141,17 +146,17 @@ FloatingWindow {
 
   title: "OmaAmp" + (skinName.length ? " — " + skinName : "")
   implicitWidth: Math.ceil(S.MAIN_WIDTH * preferredZoom)
-  implicitHeight: Math.ceil(S.MAIN_HEIGHT * preferredZoom)
+  implicitHeight: Math.ceil(stackSkinHeight * preferredZoom)
   minimumSize: Qt.size(
     Math.ceil(S.MAIN_WIDTH / dpr),
-    Math.ceil(S.MAIN_HEIGHT / dpr))
+    Math.ceil(stackSkinHeight / dpr))
   maximumSize: Qt.size(16384, 16384)
 
   function requestPreferredSize() {
     // A floating compositor honors this immediately; a tiled compositor keeps
     // its tile while the artwork itself switches scale within it.
     implicitWidth = Math.ceil(S.MAIN_WIDTH * preferredZoom)
-    implicitHeight = Math.ceil(S.MAIN_HEIGHT * (playlist_.shown ? 2 : 1) * preferredZoom)
+    implicitHeight = Math.ceil(stackSkinHeight * preferredZoom)
   }
 
   // Transparent letterbox: in a tile bigger than the skin, the wallpaper
@@ -166,7 +171,28 @@ FloatingWindow {
     playlist_.shown = !playlist_.shown
     // implicitHeight is the client-side resize request; a tiling layout
     // ignores it, a floating window honors it.
-    implicitHeight = Math.ceil((S.MAIN_HEIGHT * (playlist_.shown ? 2 : 1)) * preferredZoom)
+    requestPreferredSize()
+    persistLayout()
+  }
+
+  function setPlaylistHeight(skinPixels, persist) {
+    playlistHeight = S.snapPlaylistHeight(skinPixels)
+    requestPreferredSize()
+    if (persist) persistLayout()
+  }
+
+  function persistLayout() {
+    var helper = Quickshell.env("OMAAMP_HELPER") || ""
+    if (!helper.length || layoutProc.running) return
+    layoutProc.command = [helper, "layout", "--playlist",
+      playlist_.shown ? "open" : "closed", "--height", String(playlistHeight)]
+    layoutProc.running = true
+  }
+
+  Process {
+    id: layoutProc
+    running: false
+    command: []
   }
 
   function transport(action) {
@@ -928,14 +954,19 @@ FloatingWindow {
       skinDir: root.skinDir
       helper: Quickshell.env("OMAAMP_HELPER") || ""
       zoom: root.zoom
+      preferredSkinHeight: root.playlistHeight
       windowActive: root.active === true
       tui: root.tuiMode ? root.tuiColors : null
       width: S.MAIN_WIDTH * root.zoom
       // In a tile, fill whatever space remains under the main window; when
       // floating there is exactly the classic one-main-height pane, because
       // togglePlaylist() resizes the window by that much.
-      height: Math.max(S.MAIN_HEIGHT * root.zoom,
+      height: Math.max(root.playlistHeight * root.zoom,
                        root.height - S.MAIN_HEIGHT * root.zoom)
+      onHeightRequested: function(skinPixels, commit) {
+        root.setPlaylistHeight(skinPixels, commit)
+      }
+      onCloseRequested: root.togglePlaylist()
     }
   }
 
