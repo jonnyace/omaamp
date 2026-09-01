@@ -7,7 +7,7 @@
 # bar, notifications and lock screen.
 #
 #   omaamp                  launch (or focus, if already running)
-#   omaamp --skin <id|url>  launch wearing a specific museum skin
+#   omaamp --skin <id|url|file>  wear a museum or local classic skin
 #   omaamp --zoom 3         integer pixel scale (default 2)
 #   omaamp --no-engine      do not start a cliamp daemon for the backend
 #   omaamp --quit

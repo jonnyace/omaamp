@@ -56,6 +56,7 @@ INDEX = CACHE / "installed.json"
 # hot-swaps its skin, so choosing a skin never has to restart the player.
 STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "omaamp"
 CURRENT = STATE / "current.json"
+BASE_SKIN_MD5 = "5e4f10275dcb1fb211d4a8b4f1bda236"  # base-2.91 compatibility fallback
 
 
 def atomic_write_text(path: Path, text: str) -> None:
@@ -65,6 +66,23 @@ def atomic_write_text(path: Path, text: str) -> None:
     try:
         with os.fdopen(fd, "w") as stream:
             stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def atomic_write_bytes(path: Path, payload: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary, path)
@@ -193,9 +211,26 @@ def fetch_skin(md5: str) -> bytes:
     if not data:
         raise LookupError(f"no skin with md5 {md5}")
     blob = museum.download(data["download_url"])
-    path.write_bytes(blob)
-    (SKINS / f"{md5}.name").write_text(data.get("filename") or md5)
+    atomic_write_bytes(path, blob)
+    atomic_write_text(SKINS / f"{md5}.name", data.get("filename") or md5)
     return blob
+
+
+def cache_skin_source(value: str) -> str:
+    """Resolve a museum id/link or cache a local classic skin by content."""
+    candidate = Path(value).expanduser()
+    if not candidate.is_file():
+        return museum.skin_md5(value)
+    if candidate.suffix.lower() not in (".wsz", ".zip"):
+        raise ValueError("a local classic skin must end in .wsz or .zip")
+    payload = candidate.read_bytes()
+    if len(payload) > MAX_ARCHIVE_BYTES:
+        raise ValueError("skin archive exceeds download budget")
+    md5 = hashlib.md5(payload, usedforsecurity=False).hexdigest()
+    SKINS.mkdir(parents=True, exist_ok=True)
+    atomic_write_bytes(SKINS / f"{md5}.wsz", payload)
+    atomic_write_text(SKINS / f"{md5}.name", candidate.name)
+    return md5
 
 
 def skin_name(md5: str) -> str:
@@ -310,8 +345,10 @@ SHEETS = (
     "volume.bmp", "balance.bmp", "shufrep.bmp", "monoster.bmp", "playpaus.bmp",
     "numbers.bmp", "nums_ex.bmp", "pledit.bmp",
     # Not a sheet: the analyzer's 24-colour ramp, read by the player at runtime.
-    "viscolor.txt", "pledit.txt",
+    "viscolor.txt", "pledit.txt", "region.txt",
 )
+
+DRAWN_SHEETS = tuple(sheet for sheet in SHEETS if sheet.endswith((".bmp", ".png")))
 
 
 def _member_name(filename: str) -> str:
@@ -429,6 +466,43 @@ def extract_skin(md5: str, *, force: bool = False) -> Path:
     return extract_archive(fetch_skin(md5), md5, force=force)
 
 
+def missing_drawn_sheets(directory: Path) -> list[str]:
+    missing = [sheet for sheet in DRAWN_SHEETS if not (directory / sheet).exists()]
+    # numbers.bmp and nums_ex.bmp are complete alternatives.
+    if (directory / "numbers.bmp").exists() or (directory / "nums_ex.bmp").exists():
+        missing = [sheet for sheet in missing if sheet not in ("numbers.bmp", "nums_ex.bmp")]
+    return missing
+
+
+def complete_with_fallback(primary: Path, fallback: Path, md5: str) -> Path:
+    """Overlay an incomplete skin on the cached classic baseline."""
+    key = hashlib.sha256(f"{primary}\0{fallback}".encode()).hexdigest()[:12]
+    out = SPRITES / f"{md5}-complete-v1-{key}"
+    if (out / "main.bmp").exists() and not missing_drawn_sheets(out):
+        return out
+    SPRITES.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".{md5}.complete.", dir=SPRITES) as temporary:
+        staging = Path(temporary)
+        sources = {}
+        for name in SHEETS:
+            source = primary / name if (primary / name).exists() else fallback / name
+            if not source.exists():
+                continue
+            os.link(source, staging / name)
+            sources[name] = "skin" if source.parent == primary else "fallback"
+        atomic_write_json(staging / "manifest.json", {
+            "schema": 1,
+            "md5": md5,
+            "primary": str(primary),
+            "fallback": str(fallback),
+            "sources": sources,
+        })
+        if out.exists():
+            out = SPRITES / f"{out.name}-refresh-{time.time_ns()}"
+        os.rename(staging, out)
+    return out
+
+
 def cmd_extract(args) -> int:
     """Unpack a skin into a flat, checked and versioned sprite directory."""
     out = extract_skin(args.md5, force=args.force)
@@ -481,11 +555,19 @@ def cmd_use(args) -> int:
     """
     # Validate before this user-provided value is ever used as a cache path.
     # This also turns links copied from skins.webamp.org into their skin id.
-    args.md5 = museum.skin_md5(args.md5)
+    args.md5 = cache_skin_source(args.md5)
 
     # Normalization owns archive compatibility, cache invalidation and safety;
     # every caller uses this one path.
     out = extract_skin(args.md5)
+    if args.md5 != BASE_SKIN_MD5 and missing_drawn_sheets(out):
+        try:
+            out = complete_with_fallback(out, extract_skin(BASE_SKIN_MD5), args.md5)
+        except Exception as exc:
+            # A cached local skin still works offline. Missing pieces remain
+            # holes, and the response names them, rather than making a museum
+            # fallback download a condition of local playback.
+            print(f"omaamp: compatibility fallback unavailable: {exc}", file=sys.stderr)
     sprites = _sprite_payload(args.md5, out)
 
     data = fetch_skin(args.md5)
@@ -866,9 +948,6 @@ def cmd_remove(args) -> int:
     return emit({"removed": slug})
 
 
-BASE_SKIN_MD5 = "5e4f10275dcb1fb211d4a8b4f1bda236"  # base-2.91, the default
-
-
 def read_theme_colors() -> dict:
     src = Path.home() / ".local/state/omarchy/current/theme/colors.toml"
     values = {}
@@ -962,7 +1041,7 @@ def main() -> int:
     p.add_argument("md5"); p.add_argument("--force", action="store_true")
     p.set_defaults(fn=cmd_extract)
 
-    p = sub.add_parser("use", help="wear a skin from an md5 or skins.webamp.org link")
+    p = sub.add_parser("use", help="wear a local .wsz, museum md5, or skins.webamp.org link")
     p.add_argument("md5"); p.add_argument("--no-theme", action="store_true")
     p.set_defaults(fn=cmd_use)
 

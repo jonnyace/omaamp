@@ -35,6 +35,7 @@ class SpriteCache(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         skinner.SPRITES = Path(self.tmp.name) / "sprites"
+        skinner.SKINS = Path(self.tmp.name) / "skins"
 
     def test_windows_paths_and_last_duplicate_win(self):
         data = archive([
@@ -70,6 +71,31 @@ class SpriteCache(unittest.TestCase):
         data = archive([("text.bmp", b"font")])
         with self.assertRaisesRegex(ValueError, "no main.bmp"):
             skinner.extract_archive(data, "e" * 32)
+
+    def test_local_skin_is_cached_by_content_with_its_display_name(self):
+        source = Path(self.tmp.name) / "Local Look.WSZ"
+        payload = archive([("main.bmp", b"main")])
+        source.write_bytes(payload)
+        md5 = skinner.cache_skin_source(str(source))
+        self.assertEqual((skinner.SKINS / f"{md5}.wsz").read_bytes(), payload)
+        self.assertEqual((skinner.SKINS / f"{md5}.name").read_text(), source.name)
+
+    def test_fallback_overlay_prefers_the_selected_skin(self):
+        primary = Path(self.tmp.name) / "primary"
+        fallback = Path(self.tmp.name) / "fallback"
+        primary.mkdir()
+        fallback.mkdir()
+        (primary / "main.bmp").write_bytes(b"selected")
+        (fallback / "main.bmp").write_bytes(b"baseline")
+        (fallback / "cbuttons.bmp").write_bytes(b"controls")
+        out = skinner.complete_with_fallback(primary, fallback, "f" * 32)
+        self.assertEqual((out / "main.bmp").read_bytes(), b"selected")
+        self.assertEqual((out / "cbuttons.bmp").read_bytes(), b"controls")
+
+    def test_region_file_survives_normalization(self):
+        data = archive([("main.bmp", b"main"), ("REGION.TXT", b"[Normal]\n")])
+        out = skinner.extract_archive(data, "0" * 32)
+        self.assertEqual((out / "region.txt").read_bytes(), b"[Normal]\n")
 
 
 if __name__ == "__main__":

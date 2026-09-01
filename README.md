@@ -100,7 +100,8 @@ museum entries flagged NSFW are filtered from browse and search.
   around the artwork. With the playlist open, scaling fits the complete docked
   stack rather than letting the lower pane escape a short tile. Drag the
   playlist's lower-right corner to resize it in classic 29-pixel steps; its
-  open state and preferred height survive restarts.
+  open state and preferred height survive restarts. Drop a local `.wsz` or
+  `.zip` skin anywhere on the window to install and wear it.
 - **Following your Omarchy theme**: museum skins are bitmap art — they keep
   their own colors and do **not** recolor when you switch Omarchy themes.
   Two ways to get a player that matches your desktop:
@@ -118,7 +119,7 @@ museum entries flagged NSFW are filtered from browse and search.
 
 ```bash
 omaamp                  # launch, or focus the running instance
-omaamp --skin <id-or-link>  # wear a skin by md5 or a copied museum link
+omaamp --skin <id-link-or-file>  # museum md5/link or a local .wsz/.zip
 omaamp --zoom 3         # bigger pixels
 omaamp --no-engine      # don't start a cliamp daemon
 omaamp --quit
@@ -139,6 +140,14 @@ that owns the bar, notifications and lock screen — and this program's job is
 decoding bitmaps from arbitrary archives, ~0.4% of which have corrupt
 headers. As an app, a decoder fault closes a music player. Measured marginal
 cost: ~117 MB PSS (most of Qt is already resident for the shell).
+
+**The cliamp boundary.** OmaAmp is presentation and desktop integration on
+top of cliamp, not a second player engine. cliamp owns decoding, playback,
+its queue, spectrum samples and terminal configuration; OmaAmp talks through
+MPRIS, `visstream`, and the documented local socket. Generic MPRIS players
+still get transport controls, but cliamp-only capabilities stay conditional.
+New playback behavior belongs upstream in cliamp and is surfaced here only
+after cliamp exposes it—OmaAmp does not grow a parallel decoder, queue or EQ.
 
 **Theme conversion.** Winamp drew its colors over its own artwork; a
 terminal draws them on a flat background, so a literal port leaves a large
