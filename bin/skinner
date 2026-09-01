@@ -28,11 +28,13 @@ import json
 import os
 import re
 import io
+import struct
 import tempfile
 import subprocess
 import sys
 import time
 import zipfile
+import zlib
 import urllib.error
 from pathlib import Path
 
@@ -373,6 +375,86 @@ def _skin_members(zf: "zipfile.ZipFile") -> dict[str, "zipfile.ZipInfo"]:
     return members
 
 
+def parse_normal_region(text: str) -> list[list[tuple[int, int]]]:
+    """Read the polygons in region.txt's [Normal] section."""
+    section = ""
+    counts = []
+    coordinates = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith(";"):
+            continue
+        if line.startswith("["):
+            section = line.strip("[] ").lower()
+            continue
+        if section != "normal" or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        numbers = [
+            int(number)
+            for number in re.findall(r"-?\d+", value)
+        ]
+        if key.strip().lower() == "numpoints":
+            counts.extend(max(0, number) for number in numbers)
+        elif key.strip().lower() == "pointlist":
+            coordinates.extend(numbers)
+    points = list(zip(coordinates[0::2], coordinates[1::2]))
+    polygons = []
+    offset = 0
+    for count in counts:
+        polygon = points[offset:offset + count]
+        offset += count
+        if count >= 3 and len(polygon) == count:
+            polygons.append(polygon)
+    return polygons
+
+
+def _inside_polygon(x: float, y: float, polygon: list[tuple[int, int]]) -> bool:
+    inside = False
+    for index, (x0, y0) in enumerate(polygon):
+        x1, y1 = polygon[(index + 1) % len(polygon)]
+        if (y0 > y) == (y1 > y):
+            continue
+        crossing = x0 + (y - y0) * (x1 - x0) / (y1 - y0)
+        if x < crossing:
+            inside = not inside
+    return inside
+
+
+def _png_chunk(kind: bytes, payload: bytes) -> bytes:
+    return struct.pack(">I", len(payload)) + kind + payload + struct.pack(
+        ">I", zlib.crc32(kind + payload) & 0xFFFF_FFFF
+    )
+
+
+def normal_region_png(text: str, width: int = 275, height: int = 116) -> bytes | None:
+    """Rasterize a non-rectangular main-window region to an RGBA PNG."""
+    polygons = parse_normal_region(text)
+    if not polygons:
+        return None
+    rows = []
+    everything = True
+    for py in range(height):
+        row = bytearray([0])  # PNG filter: none
+        for px in range(width):
+            visible = any(
+                _inside_polygon(px + 0.5, py + 0.5, polygon)
+                for polygon in polygons
+            )
+            everything &= visible
+            row.extend((255, 255, 255, 255 if visible else 0))
+        rows.append(bytes(row))
+    if everything:
+        return None
+    header = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _png_chunk(b"IHDR", header)
+        + _png_chunk(b"IDAT", zlib.compress(b"".join(rows), 9))
+        + _png_chunk(b"IEND", b"")
+    )
+
+
 def _manifest_valid(out: Path, digest: str) -> bool:
     try:
         manifest = json.loads((out / "manifest.json").read_text())
@@ -434,6 +516,19 @@ def extract_archive(data: bytes, md5: str, *, force: bool = False) -> Path:
                     "sha256": hashlib.sha256(payload).hexdigest(),
                 }
 
+            region_file = staging / "region.txt"
+            if region_file.exists():
+                region = normal_region_png(
+                    region_file.read_bytes().decode("cp1252", errors="replace")
+                )
+                if region is not None:
+                    (staging / "region-normal.png").write_bytes(region)
+                    files["region-normal.png"] = {
+                        "bytes": len(region),
+                        "sha256": hashlib.sha256(region).hexdigest(),
+                        "generated": "region.txt",
+                    }
+
             # Winamp used the middle of volume.bmp when balance.bmp was absent.
             # Keeping the substitute as a real normalized file lets QML stay a
             # simple sprite renderer instead of learning skin compatibility.
@@ -484,7 +579,11 @@ def complete_with_fallback(primary: Path, fallback: Path, md5: str) -> Path:
     with tempfile.TemporaryDirectory(prefix=f".{md5}.complete.", dir=SPRITES) as temporary:
         staging = Path(temporary)
         sources = {}
-        for name in SHEETS:
+        for name in (*SHEETS, "region-normal.png"):
+            # A region belongs to the selected skin; never borrow the fallback
+            # skin's silhouette for otherwise rectangular art.
+            if name == "region-normal.png" and not (primary / name).exists():
+                continue
             source = primary / name if (primary / name).exists() else fallback / name
             if not source.exists():
                 continue
@@ -519,6 +618,7 @@ def _sprite_payload(md5: str, out: Path) -> dict:
         # The window needs to know which digit sheet it got: nums_ex leads with
         # a minus sign, shifting every glyph one cell to the right.
         "extendedDigits": "numbers.bmp" not in present and "nums_ex.bmp" in present,
+        "regionMask": str(out / "region-normal.png") if (out / "region-normal.png").exists() else "",
         "missing": [s for s in ("main.bmp", "cbuttons.bmp", "titlebar.bmp", "text.bmp") if s not in present],
     }
 
@@ -586,6 +686,7 @@ def cmd_use(args) -> int:
         "dir": sprites["dir"],
         "name": re.sub(r"\.(wsz|zip)$", "", filename, flags=re.I),
         "extendedDigits": sprites["extendedDigits"],
+        "regionMask": sprites["regionMask"],
         "theme": slug,
     }))
 
