@@ -97,7 +97,10 @@ museum entries flagged NSFW are filtered from browse and search.
 - **Player**: opens as its own tile (never hovering over your windows),
   scales in whole-pixel steps up to Winamp's classic double-size, floats
   when you toggle it. The letterbox is transparent — wallpaper shows through
-  around the artwork.
+  around the artwork. With the playlist open, scaling fits the complete docked
+  stack rather than letting the lower pane escape a short tile. Drag the
+  playlist's lower-right corner to resize it in classic 29-pixel steps; its
+  open state and preferred height survive restarts.
 - **Following your Omarchy theme**: museum skins are bitmap art — they keep
   their own colors and do **not** recolor when you switch Omarchy themes.
   Two ways to get a player that matches your desktop:

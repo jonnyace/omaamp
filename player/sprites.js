@@ -12,6 +12,17 @@
 
 var MAIN_WIDTH = 275
 var MAIN_HEIGHT = 116
+var PLAYLIST_MIN_HEIGHT = 116
+var PLAYLIST_MAX_HEIGHT = 696
+var PLAYLIST_RESIZE_STEP = 29
+
+function snapPlaylistHeight(height) {
+  var wanted = Number(height)
+  if (!isFinite(wanted)) wanted = PLAYLIST_MIN_HEIGHT
+  var steps = Math.round((wanted - PLAYLIST_MIN_HEIGHT) / PLAYLIST_RESIZE_STEP)
+  return Math.max(PLAYLIST_MIN_HEIGHT,
+    Math.min(PLAYLIST_MAX_HEIGHT, PLAYLIST_MIN_HEIGHT + steps * PLAYLIST_RESIZE_STEP))
+}
 
 // ---- Transport ----------------------------------------------------------
 // cbuttons.bmp is 136x36: released states on the top row, pressed directly
