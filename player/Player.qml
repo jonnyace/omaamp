@@ -163,6 +163,33 @@ FloatingWindow {
   // shows through around the artwork instead of a black slab.
   color: "transparent"
 
+  function localSkinPath(url) {
+    if (url && url.toLocalFile) return url.toLocalFile()
+    var value = String(url || "")
+    return value.indexOf("file://") === 0 ? decodeURIComponent(value.slice(7)) : value
+  }
+
+  DropArea {
+    anchors.fill: parent
+    z: 1000
+    onDropped: function(drop) {
+      if (!drop.urls || !drop.urls.length || droppedSkinProc.running) return
+      var path = root.localSkinPath(drop.urls[0])
+      if (!/\.(wsz|zip)$/i.test(path)) return
+      var helper = Quickshell.env("OMAAMP_HELPER") || ""
+      if (!helper.length) return
+      droppedSkinProc.command = [helper, "use", path]
+      droppedSkinProc.running = true
+      drop.accepted = true
+    }
+  }
+
+  Process {
+    id: droppedSkinProc
+    running: false
+    command: []
+  }
+
   // One window, Winamp-docked: toggling PL grows or shrinks the window by
   // a main-window-height so the pane appears attached below the skin. In a
   // tile the compositor ignores the resize request and the pane simply uses
@@ -237,6 +264,7 @@ FloatingWindow {
 
   property var visColors: []
   property var bands: []
+  property color skinTextColor: "#00fcfc"
 
   // The skin's own analyzer ramp, so the bars are the colours its author chose
   // rather than a generic gradient.
@@ -245,6 +273,13 @@ FloatingWindow {
     watchChanges: false
     printErrors: false
     onLoaded: root.visColors = S.parseViscolor(text())
+  }
+
+  FileView {
+    path: root.skinDir.length ? root.skinDir + "/pledit.txt" : ""
+    watchChanges: false
+    printErrors: false
+    onLoaded: root.skinTextColor = S.pleditNormalColor(text(), "#00fcfc")
   }
 
   // MPRIS carries no spectrum data, so a real analyzer is only possible for a
@@ -375,6 +410,7 @@ FloatingWindow {
       x: S.TITLE_AT[0] * root.zoom
       y: S.TITLE_AT[1] * root.zoom
       spacing: 0
+      visible: S.bitmapTextCovered(root.marqueeText)
 
       Repeater {
         model: root.marqueeText.split("")
@@ -396,6 +432,25 @@ FloatingWindow {
           }
         }
       }
+    }
+
+    // The 5x6 skin font cannot represent most scripts. Keep it when it can;
+    // otherwise rasterize the complete marquee in a hinted system face and
+    // tint it with the skin's playlist text color instead of dropping glyphs.
+    Text {
+      visible: !S.bitmapTextCovered(root.marqueeText)
+      x: S.TITLE_AT[0] * root.zoom
+      y: (S.TITLE_AT[1] - 1) * root.zoom
+      width: 154 * root.zoom
+      height: 7 * root.zoom
+      text: root.marqueeText
+      textFormat: Text.PlainText
+      clip: true
+      color: root.skinTextColor
+      font.family: "monospace"
+      font.pixelSize: 7 * root.zoom
+      font.hintingPreference: Font.PreferFullHinting
+      renderType: Text.NativeRendering
     }
 
     // ---- Analyzer --------------------------------------------------------

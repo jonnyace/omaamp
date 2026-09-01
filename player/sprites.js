@@ -90,6 +90,23 @@ function charRect(ch) {
   return null
 }
 
+function bitmapTextCovered(text) {
+  var value = String(text || "")
+  for (var i = 0; i < value.length; i++) {
+    if (value[i] !== " " && charRect(value[i]) === null) return false
+  }
+  return true
+}
+
+function pleditNormalColor(text, fallback) {
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var match = /^\s*normal\s*=\s*(#?[0-9a-f]{6})\s*$/i.exec(lines[i])
+    if (match) return match[1][0] === "#" ? match[1] : "#" + match[1]
+  }
+  return fallback
+}
+
 // ---- Sliders ------------------------------------------------------------
 var POSBAR = {
   background: [0, 0, 248, 10],
