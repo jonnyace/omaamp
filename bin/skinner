@@ -23,12 +23,15 @@ rather than a split between stdout and exit codes.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
 import io
+import tempfile
 import subprocess
 import sys
+import time
 import zipfile
 import urllib.error
 from pathlib import Path
@@ -53,6 +56,28 @@ INDEX = CACHE / "installed.json"
 # hot-swaps its skin, so choosing a skin never has to restart the player.
 STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "omaamp"
 CURRENT = STATE / "current.json"
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Replace a watched state file only after its complete contents exist."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            stream.write(text)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except OSError:
+            pass
+        raise
+
+
+def atomic_write_json(path: Path, payload: object) -> None:
+    atomic_write_text(path, json.dumps(payload, indent=1))
 
 
 def current_player_size() -> str:
@@ -83,8 +108,7 @@ def read_index() -> dict:
 
 
 def write_index(data: dict) -> None:
-    INDEX.parent.mkdir(parents=True, exist_ok=True)
-    INDEX.write_text(json.dumps(data, indent=1))
+    atomic_write_json(INDEX, data)
 
 
 def _require_md5(value: str) -> str:
@@ -98,12 +122,18 @@ def _require_md5(value: str) -> str:
 # this is not a skin asset, it is a bomb.
 MAX_MEMBER_BYTES = 16 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 64 * 1024 * 1024
+SPRITE_SCHEMA = 2
+SUPPORTED_COMPRESSION = {zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED}
 
 
-def _safe_read(zf: "zipfile.ZipFile", entry: str) -> bytes:
-    info = zf.getinfo(entry)
+def _safe_read(zf: "zipfile.ZipFile", entry: "zipfile.ZipInfo") -> bytes:
+    info = entry
+    if info.flag_bits & 1:
+        raise ValueError(f"encrypted archive member: {info.filename}")
+    if info.compress_type not in SUPPORTED_COMPRESSION:
+        raise ValueError(f"unsupported compression for archive member: {info.filename}")
     if info.file_size > MAX_MEMBER_BYTES:
-        raise ValueError(f"archive member too large: {entry} ({info.file_size} bytes)")
+        raise ValueError(f"archive member too large: {info.filename} ({info.file_size} bytes)")
     return zf.read(entry)
 
 
@@ -221,7 +251,7 @@ def cmd_fetch_featured(args) -> int:
     with futures.ThreadPoolExecutor(8) as pool:
         errors = [e for e in pool.map(prime, refs) if e]
 
-    FEATURED.write_text(json.dumps([
+    atomic_write_json(FEATURED, [
         {
             "md5": r.md5,
             "name": re.sub(r"\.(wsz|zip)$", "", r.filename, flags=re.I) or r.md5,
@@ -229,7 +259,7 @@ def cmd_fetch_featured(args) -> int:
             "url": r.museum_url,
         }
         for r in refs
-    ], indent=1))
+    ])
     return emit({"featured": len(refs), "errors": errors[:10]})
 
 
@@ -260,34 +290,124 @@ SHEETS = (
 )
 
 
-def cmd_extract(args) -> int:
-    """Unpack a skin's sprite sheets into a flat, lowercase directory.
+def _member_name(filename: str) -> str:
+    """Classic skins came from Windows; both ZIP path separators occur."""
+    return filename.replace("\\", "/").rsplit("/", 1)[-1].lower()
 
-    Skins nest their contents inconsistently and case their filenames every
-    which way ("PLEDIT.TXT", "cButtons.bmp"), which QML cannot paper over the
-    way a tolerant reader can -- an Image source either resolves or it does
-    not. So the archive is normalised once here and the window is handed a
-    directory with predictable names.
+
+def _skin_members(zf: "zipfile.ZipFile") -> dict[str, "zipfile.ZipInfo"]:
+    """Wanted members by basename, with the last duplicate winning.
+
+    Extracting a skin on Winamp's case-insensitive filesystem had that result;
+    keeping the last copy also prevents an early junk member from shadowing the
+    real sheet later in the archive.
     """
-    data = fetch_skin(args.md5)
-    out = SPRITES / args.md5
-    if not args.force and (out / "main.bmp").exists():
-        return emit(_sprite_payload(args.md5, out))
+    members = {}
+    for entry in zf.infolist():
+        if entry.is_dir() or entry.filename.endswith(("/", "\\")):
+            continue
+        name = _member_name(entry.filename)
+        if name in SHEETS:
+            members[name] = entry
+    return members
 
-    out.mkdir(parents=True, exist_ok=True)
+
+def _manifest_valid(out: Path, digest: str) -> bool:
+    try:
+        manifest = json.loads((out / "manifest.json").read_text())
+    except (OSError, ValueError):
+        return False
+    if manifest.get("schema") != SPRITE_SCHEMA or manifest.get("archive") != digest:
+        return False
+    files = manifest.get("files", {})
+    if "main.bmp" not in files:
+        return False
+    for name, expected in files.items():
+        path = out / name
+        try:
+            data = path.read_bytes()
+        except OSError:
+            return False
+        if (
+            len(data) != expected.get("bytes")
+            or hashlib.sha256(data).hexdigest() != expected.get("sha256")
+        ):
+            return False
+    return True
+
+
+def extract_archive(data: bytes, md5: str, *, force: bool = False) -> Path:
+    """Normalize one archive into an immutable, content-addressed directory."""
+    digest = hashlib.sha256(data).hexdigest()
+    out = SPRITES / f"{md5}-v{SPRITE_SCHEMA}-{digest[:12]}"
+    if not force and _manifest_valid(out, digest):
+        return out
+
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        members = {}
-        for entry in zf.namelist():
-            if not entry.endswith("/"):
-                members.setdefault(entry.rsplit("/", 1)[-1].lower(), entry)
-        total = 0
-        for sheet in SHEETS:
-            if sheet in members:
-                data = _safe_read(zf, members[sheet])
-                total += len(data)
-                if total > MAX_ARCHIVE_BYTES:
-                    raise ValueError("archive exceeds decompression budget")
-                (out / sheet).write_bytes(data)
+        members = _skin_members(zf)
+        if "main.bmp" not in members:
+            raise ValueError("skin has no main.bmp")
+        total = sum(entry.file_size for entry in members.values())
+        if total > MAX_ARCHIVE_BYTES:
+            raise ValueError("archive exceeds decompression budget")
+        for entry in members.values():
+            if entry.file_size > MAX_MEMBER_BYTES:
+                raise ValueError(f"archive member too large: {entry.filename} ({entry.file_size} bytes)")
+            if entry.flag_bits & 1:
+                raise ValueError(f"encrypted archive member: {entry.filename}")
+            if entry.compress_type not in SUPPORTED_COMPRESSION:
+                raise ValueError(f"unsupported compression for archive member: {entry.filename}")
+
+        SPRITES.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=f".{md5}.", dir=SPRITES) as temporary:
+            staging = Path(temporary)
+            files = {}
+            for sheet in SHEETS:
+                entry = members.get(sheet)
+                if entry is None:
+                    continue
+                payload = _safe_read(zf, entry)
+                (staging / sheet).write_bytes(payload)
+                files[sheet] = {
+                    "bytes": len(payload),
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                }
+
+            # Winamp used the middle of volume.bmp when balance.bmp was absent.
+            # Keeping the substitute as a real normalized file lets QML stay a
+            # simple sprite renderer instead of learning skin compatibility.
+            if "balance.bmp" not in files and "volume.bmp" in files:
+                payload = (staging / "volume.bmp").read_bytes()
+                (staging / "balance.bmp").write_bytes(payload)
+                files["balance.bmp"] = {
+                    "bytes": len(payload),
+                    "sha256": hashlib.sha256(payload).hexdigest(),
+                    "substitute": "volume.bmp",
+                }
+
+            atomic_write_json(staging / "manifest.json", {
+                "schema": SPRITE_SCHEMA,
+                "archive": digest,
+                "md5": md5,
+                "files": files,
+            })
+            if out.exists() and not force and _manifest_valid(out, digest):
+                return out
+            if out.exists():
+                # A damaged directory gets a fresh immutable name; a running
+                # player may still be reading the old one.
+                out = SPRITES / f"{out.name}-refresh-{time.time_ns()}"
+            os.rename(staging, out)
+    return out
+
+
+def extract_skin(md5: str, *, force: bool = False) -> Path:
+    return extract_archive(fetch_skin(md5), md5, force=force)
+
+
+def cmd_extract(args) -> int:
+    """Unpack a skin into a flat, checked and versioned sprite directory."""
+    out = extract_skin(args.md5, force=args.force)
     return emit(_sprite_payload(args.md5, out))
 
 
@@ -339,13 +459,9 @@ def cmd_use(args) -> int:
     # This also turns links copied from skins.webamp.org into their skin id.
     args.md5 = museum.skin_md5(args.md5)
 
-    # Re-extract when any sheet the player needs is absent -- either a fresh
-    # skin, or a cache written before that sheet joined SHEETS (pledit.bmp
-    # did, and stale extractions silently cost the playlist its chrome).
-    out = SPRITES / args.md5
-    if not all((out / sheet).exists() or True for sheet in ()) or not (out / "main.bmp").exists() \
-            or not (out / "pledit.bmp").exists() and _zip_has(args.md5, "pledit.bmp"):
-        cmd_extract_quiet(args.md5)
+    # Normalization owns archive compatibility, cache invalidation and safety;
+    # every caller uses this one path.
+    out = extract_skin(args.md5)
     sprites = _sprite_payload(args.md5, out)
 
     data = fetch_skin(args.md5)
@@ -359,44 +475,20 @@ def cmd_use(args) -> int:
     index[slug] = {"md5": args.md5, "source": filename}
     write_index(index)
 
-    STATE.mkdir(parents=True, exist_ok=True)
-    CURRENT.write_text(json.dumps({
+    atomic_write_json(CURRENT, {
         "md5": args.md5,
         "dir": sprites["dir"],
         "name": re.sub(r"\.(wsz|zip)$", "", filename, flags=re.I),
         "extendedDigits": sprites["extendedDigits"],
         "theme": slug,
         "size": current_player_size(),
-    }, indent=1))
+    })
 
     if not args.no_theme:
         subprocess.run(["cliamp", "theme", slug], capture_output=True, text=True, timeout=15)
 
     return emit(theme_payload(built, theme=slug, md5=args.md5, name=filename,
                               dir=sprites["dir"], missing=sprites["missing"]))
-
-
-def _zip_has(md5: str, name: str) -> bool:
-    try:
-        with zipfile.ZipFile(io.BytesIO(fetch_skin(md5))) as zf:
-            return any(e.rsplit("/", 1)[-1].lower() == name for e in zf.namelist())
-    except Exception:
-        return False
-
-
-def cmd_extract_quiet(md5: str) -> None:
-    """Unpack sheets without emitting -- the caller owns the output."""
-    data = fetch_skin(md5)
-    out = SPRITES / md5
-    out.mkdir(parents=True, exist_ok=True)
-    with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        members = {}
-        for entry in zf.namelist():
-            if not entry.endswith("/"):
-                members.setdefault(entry.rsplit("/", 1)[-1].lower(), entry)
-        for sheet in SHEETS:
-            if sheet in members:
-                (out / sheet).write_bytes(zf.read(members[sheet]))
 
 
 def cmd_make_theme(args) -> int:
@@ -607,8 +699,7 @@ def cmd_use_theme(args) -> int:
     if missing:
         return emit({"error": f"theme {slug} is missing {', '.join(missing)}"})
 
-    STATE.mkdir(parents=True, exist_ok=True)
-    CURRENT.write_text(json.dumps({
+    atomic_write_json(CURRENT, {
         "mode": "tui",
         "md5": "",
         "dir": "",
@@ -617,7 +708,7 @@ def cmd_use_theme(args) -> int:
         "extendedDigits": False,
         "colors": colors,
         "size": current_player_size(),
-    }, indent=1))
+    })
     subprocess.run(["cliamp", "theme", slug], capture_output=True, text=True, timeout=15)
     return emit({"worn": slug, "mode": "tui", "colors": colors})
 
@@ -637,7 +728,7 @@ def cmd_size(args) -> int:
         return emit({"error": "pick a skin before changing player size"})
 
     state["size"] = args.mode
-    CURRENT.write_text(json.dumps(state, indent=1))
+    atomic_write_json(CURRENT, state)
     return emit({"resized": args.mode, "size": args.mode})
 
 
@@ -711,7 +802,7 @@ def cmd_save(args) -> int:
         state = json.loads(CURRENT.read_text())
         if state.get("mode") == "tui" and state.get("theme") == slug:
             state["colors"] = colors
-            CURRENT.write_text(json.dumps(state, indent=1))
+            atomic_write_json(CURRENT, state)
     except (OSError, ValueError):
         pass
     subprocess.run(["cliamp", "theme", slug], capture_output=True, text=True, timeout=15)
@@ -790,8 +881,7 @@ def cmd_sync(args) -> int:
     index["omarchy"] = {"md5": "", "source": "Omarchy theme"}
     write_index(index)
 
-    STATE.mkdir(parents=True, exist_ok=True)
-    CURRENT.write_text(json.dumps({
+    atomic_write_json(CURRENT, {
         "mode": "tui",
         "md5": "",
         "dir": "",
@@ -800,7 +890,7 @@ def cmd_sync(args) -> int:
         "extendedDigits": False,
         "colors": colors,
         "size": current_player_size(),
-    }, indent=1))
+    })
     subprocess.run(["cliamp", "theme", "omarchy"], capture_output=True, text=True, timeout=15)
     return emit({"worn": "omarchy", "mode": "tui", "theme": "omarchy", "colors": colors})
 

@@ -38,6 +38,7 @@ class PlayerSizeState(unittest.TestCase):
                 self.assertEqual(payload["resized"], mode)
                 self.assertEqual(state["size"], mode)
                 self.assertEqual(state["name"], "test")
+                self.assertEqual(list(current.parent.glob(".current.json.*")), [])
 
 
 if __name__ == "__main__":
