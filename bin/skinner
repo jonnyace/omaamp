@@ -714,12 +714,9 @@ def cmd_make_theme(args) -> int:
 
     main_bmp = None
     with zipfile.ZipFile(io.BytesIO(data)) as zf:
-        members = {}
-        for entry in zf.namelist():
-            if not entry.endswith("/"):
-                members.setdefault(entry.rsplit("/", 1)[-1].lower(), entry)
-        if "main.bmp" in members:
-            main_bmp = zf.read(members["main.bmp"])
+        entry = _skin_members(zf).get("main.bmp")
+        if entry is not None:
+            main_bmp = _safe_read(zf, entry)
 
     dest = Path.home() / ".config" / "omarchy" / "themes" / slug
     # Physical resolution, so the wallpaper maps 1:1 to hardware pixels; any
