@@ -45,7 +45,7 @@ var TITLEBAR = {
 }
 
 var WINDOW_BUTTONS = [
-  { id: "shade",    rect: [ 0, 0, 9, 9], press: [ 0, 9, 9, 9], at: [254, 3] },
+  { id: "shade",    rect: [ 0, 18, 9, 9], press: [ 9, 18, 9, 9], at: [254, 3] },
   { id: "close",    rect: [18, 0, 9, 9], press: [18, 9, 9, 9], at: [264, 3] }
 ]
 
@@ -142,10 +142,10 @@ var PLAY_STATE = {
 }
 
 var MONOSTER = {
-  monoOn:    [ 0,  0, 29, 12],
-  monoOff:   [ 0, 12, 29, 12],
-  stereoOn:  [29,  0, 29, 12],
-  stereoOff: [29, 12, 29, 12],
+  monoOn:    [29,  0, 29, 12],
+  monoOff:   [29, 12, 29, 12],
+  stereoOn:  [ 0,  0, 29, 12],
+  stereoOff: [ 0, 12, 29, 12],
   monoAt:   [212, 41],
   stereoAt: [239, 41]
 }
