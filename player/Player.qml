@@ -667,7 +667,7 @@ FloatingWindow {
       dir: root.skinDir
       sheet: "shufrep.bmp"
       zoom: root.zoom
-      rect: playlist_.shown ? S.SHUFREP.eqOn: S.SHUFREP.eqOff
+      rect: S.SHUFREP.eqOff
       x: S.SHUFREP.eqAt[0] * root.zoom
       y: S.SHUFREP.eqAt[1] * root.zoom
     }
